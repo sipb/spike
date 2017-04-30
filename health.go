@@ -30,18 +30,18 @@ func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var input = scanner.Text()
-    	fmt.Println("Executing: ",input)
-    	words := strings.Fields(input)
+		fmt.Println("Executing: ",input)
+		words := strings.Fields(input)
 
-	    if strings.Contains(input, "rmserver"){
-	    	rmserver(servers, words[1])
-	    	fmt.Println(servers)
-	    }
+		if strings.Contains(input, "rmserver"){
+			rmserver(servers, words[1])
+			fmt.Println(servers)
+		}
 
-	    if strings.Contains(input, "addserver"){
-	    	addserver(servers, words[1], words[2])
-	    	fmt.Println(servers)
-    	}
+		if strings.Contains(input, "addserver"){
+			addserver(servers, words[1], words[2])
+			fmt.Println(servers)
+		}
 	}
 }
 
