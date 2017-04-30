@@ -33,6 +33,8 @@ func main() {
 		fmt.Println("Executing: ",input)
 		words := strings.Fields(input)
 
+		//add server works but rm server makes loopserver in line 27 crash
+		//need to implement channel...?
 		if strings.Contains(input, "rmserver"){
 			rmserver(servers, words[1])
 			fmt.Println(servers)
