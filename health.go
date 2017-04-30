@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"strings"
 	"time"
+	"bufio"
+	"os"
 )
 
 type Server struct {
@@ -23,7 +25,24 @@ func main() {
 	addserver(servers, "http://strawberry-habanero.mit.edu/health", "service")
 
 	loopservers(servers, 100, 500)
-	loop(servers, "http://strawberry-habanero.mit.edu/health", 100, 500)
+
+	//takes user input command to add or remove server
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var input = scanner.Text()
+    	fmt.Println("Executing: ",input)
+    	words := strings.Fields(input)
+
+	    if strings.Contains(input, "rmserver"){
+	    	rmserver(servers, words[1])
+	    	fmt.Println(servers)
+	    }
+
+	    if strings.Contains(input, "addserver"){
+	    	addserver(servers, words[1], words[2])
+	    	fmt.Println(servers)
+    	}
+	}
 }
 
 
@@ -37,12 +56,14 @@ func rmserver(servers map[string]*Server, url string){
 	delete(servers, url)
 }
 
+//runs health checks on all servers
 func loopservers(servers map[string]*Server, num float64, timeout int){
 	for k:= range servers{
 		go loop(servers, k, num, timeout)
 	}
 }
 
+//runs health check on a single server
 func loop(servers map[string]*Server, url string, num float64, timeout int) {
 	count := 0
 	boo := true
@@ -51,7 +72,7 @@ func loop(servers map[string]*Server, url string, num float64, timeout int) {
 		num := time.Duration(num)
 
 		time.Sleep(num * time.Millisecond)
-		fmt.Println(url, health(url), "\n", count, servers)
+		//fmt.Println(url, health(url), "\n", count, servers)
 
 		if health(url) != true{
 			count += 1
@@ -70,6 +91,7 @@ func loop(servers map[string]*Server, url string, num float64, timeout int) {
 	}
 }
 
+//checks health of server
 func health(url string) bool{
 	resp, _ := http.Get(url)
 	bytes, _ := ioutil.ReadAll(resp.Body)
