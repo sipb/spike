@@ -9,6 +9,7 @@ import (
 	"time"
 	"bufio"
 	"os"
+	"github.com/kkdai/maglev"
 )
 
 type Server struct {
@@ -18,13 +19,38 @@ type Server struct {
 
 type Servers map[string]*Server
 
+
+func serverstring(servers map[string]*Server) []string{
+	var names []string
+	for k:= range servers{
+		names = append(names, k)
+	}
+	return names
+}
+
+const lookupSizeM = 11
+
 func main() {
 	servers := make(Servers)
 
 	addserver(servers, "http://cheesy-fries.mit.edu/health", "service")
 	addserver(servers, "http://strawberry-habanero.mit.edu/health", "service")
 
-	loopservers(servers, 100, 500)
+	names := serverstring(servers)
+  	mm := maglev.NewMaglev(names, lookupSizeM)
+
+	loopservers(mm, servers, 100, 500)
+
+    ret := make(map[string]string)
+    packets := []string{"19.168.124.100/572/81.9.179.69/80/4", "192.16.124.100/50270/81.209.179.69/80/6", "12.168.12.100/50268/81.209.179.69/80/6", "192.168.1.0/50266/81.209.179.69/80/6", "92.168.124.100/50264/81.209.179.69/80/6"}
+    for i := 0; i < len(packets); i++ {
+      serv, _ := mm.Get(packets[i])
+      ret[packets[i]] = serv
+    }
+    fmt.Printf("5-tuple to Server mapping:\n")
+    for k, v := range ret {
+      fmt.Printf("%v: %v\n", k, v)
+    }
 
 	//takes user input command to add or remove server
 	scanner := bufio.NewScanner(os.Stdin)
@@ -59,14 +85,14 @@ func rmserver(servers map[string]*Server, url string){
 }
 
 //runs health checks on all servers
-func loopservers(servers map[string]*Server, num float64, timeout int){
+func loopservers(mm *maglev.Maglev, servers map[string]*Server, num float64, timeout int){
 	for k:= range servers{
-		go loop(servers, k, num, timeout)
+		go loop(mm, servers, k, num, timeout)
 	}
 }
 
 //runs health check on a single server
-func loop(servers map[string]*Server, url string, num float64, timeout int) {
+func loop(mm *maglev.Maglev, servers map[string]*Server, url string, num float64, timeout int) {
 	count := 0
 	boo := true
 
@@ -84,10 +110,12 @@ func loop(servers map[string]*Server, url string, num float64, timeout int) {
 		if health(url) == true {
 			count = 0
 			servers[url].health = true
+			mm.Add(url)
 		}
 
 		if count >= timeout{ //change this later
 			servers[url].health = false
+			mm.Remove(url)
 		}
 
 	}
