@@ -1,5 +1,5 @@
-# Spike
-A software network load balancer that runs on commodity Linux servers based on Google's Maglev.
+# Spike: A Software Network Load Balancer
+Spike runs on commodity Linux servers and is based on Google's network load balancer, Maglev, which can be found [here](https://research.google.com/pubs/pub44824.html).
 
 # Install
 
