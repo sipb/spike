@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"io/ioutil"
 	"time"
-	"github.com/kkdai/maglev"
+	"../maglev"
 	"strings"
 )
 
@@ -27,55 +27,54 @@ func Serverstring(servers map[string]*Server) []string{
 }
 
 //adds server to servers hash table
-func Addserver(servers map[string]*Server, url string, service string) {
-	servers[url] = &Server{false, service}
+func Addserver(servers map[string]*Server, ip string, service string) {
+	servers[ip] = &Server{false, service}
 }
 
 //removes server from servers hash table
-func Rmserver(servers map[string]*Server, url string){
-	delete(servers, url)
+func Rmserver(servers map[string]*Server, ip string){
+	delete(servers, ip)
 }
 
 //runs health checks on all servers
-func Loopservers(mm *maglev.Maglev, servers map[string]*Server, num float64, timeout int){
+func Loopservers(mm *maglev.Table, servers map[string]*Server, num float64, timeout int){
 	for k:= range servers{
 		go loop(mm, servers, k, num, timeout)
 	}
 }
 
 //runs health check on a single server
-func loop(mm *maglev.Maglev, servers map[string]*Server, url string, num float64, timeout int) {
+func loop(mm *maglev.Table, servers map[string]*Server, ip string, num float64, timeout int) {
 	count := 0
-	boo := true
 
-	for boo{
+	for {
 		num := time.Duration(num)
 
 		time.Sleep(num * time.Millisecond)
-		//fmt.Println(url, health(url), "\n", count, servers)
+		//fmt.Println(ip, health(ip), "\n", count, servers)
 
-		if health(url) != true{
+		if health(ip) != true{
 			count += 1
 			fmt.Println(count)
 		}
 
-		if health(url) == true {
+		if health(ip) == true {
 			count = 0
-			servers[url].health = true
-			mm.Add(url)
+			servers[ip].health = true
+			mm.Add(ip)
 		}
 
 		if count >= timeout{ //change this later
-			servers[url].health = false
-			mm.Remove(url)
+			servers[ip].health = false
+			mm.Remove(ip)
 		}
 
 	}
 }
 
 //checks health of server
-func health(url string) bool{
-	resp, _ := http.Get(url)
+func health(ip string) bool{
+	resp, _ := http.Get(ip)
 	bytes, _ := ioutil.ReadAll(resp.Body)
 
 	resp.Body.Close()
