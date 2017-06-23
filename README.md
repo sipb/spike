@@ -6,5 +6,5 @@ A software network load balancer that runs on commodity Linux servers based on G
 ```
 go get github.com/dchest/siphash
 ```
-#License
+# License
 maglev.go adapted from https://github.com/dgryski/go-maglev/ under the MIT license.
