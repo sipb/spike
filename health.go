@@ -19,7 +19,6 @@ type Server struct {
 
 type Servers map[string]*Server
 
-
 func serverstring(servers map[string]*Server) []string{
 	var names []string
 	for k:= range servers{
@@ -35,6 +34,7 @@ func main() {
 
 	addserver(servers, "http://cheesy-fries.mit.edu/health", "service")
 	addserver(servers, "http://strawberry-habanero.mit.edu/health", "service")
+
 
 	names := serverstring(servers)
   	mm := maglev.NewMaglev(names, lookupSizeM)
