@@ -25,6 +25,7 @@ end
 function GRE_wrap:process_packet(i, o)
    local p = L.receive(i)
    local gre_header = G:new({protocol = self.protocol})
+   -- TODO figure out what the encapsulated protocol should actually be
    local datagram = D:new(p, self.protocol, {delayed_commit = false})
    datagram:push(gre_header)
 

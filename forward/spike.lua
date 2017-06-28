@@ -8,12 +8,11 @@ ETHERNET = 0x6558
 IPV4 = 0x0800
 IPV6 = 0x86DD
 
-config.app(c, "source", B.Source, 60)
+config.app(c, "source", B.Source)
 config.app(c, "gre", G.GRE_wrap, IPV6)
 config.app(c, "sink", P.PcapWriter, "out.pcap")
 config.link(c, "source.tx -> gre.input")
 config.link(c, "gre.output -> sink.input")
--- config.link(c, "source.tx -> sink.input")
 
 engine.configure(c)
 engine.main({duration = 1, report = {showlinks = true}})
