@@ -9,4 +9,4 @@ if [[ -z "$SPIKE" ]]; then
     exit 1
 fi
 
-$SNABB/src/snabb snsh -P $SPIKE/forward/grewrap.lua $SPIKE/forward/spike.lua
+$SNABB/src/snabb snsh -P $SPIKE/forward/rewriting.lua $SPIKE/forward/spike.lua "$@"
