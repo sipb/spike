@@ -25,14 +25,49 @@ end
 -- Return the backend associated with a hash value
 local function get_backend(five_hash)
    -- TODO
-   return "\066\066\066\066"
+   return IPV4:pton("66.66.66.66")
 end
 
 
 local Rewriting = {}
 
-function Rewriting:new()
-   return setmetatable({}, {__index = Rewriting})
+-- Arguments:
+-- ipv4_addr or ipv6_addr (string) -- the IP address of the spike
+-- src_mac (string) -- the MAC address to send from; defaults to the
+--                     destination MAC of incoming packets
+-- dst_mac (string) -- the MAC address to send packets to
+-- ttl (int, default 30) -- the TTL to set on outgoing packets
+function Rewriting:new(opts)
+   local ipv4_addr, ipv6_addr, err
+   if opts.ipv4_addr and opts.ipv6_addr then
+      error("cannot specify both ipv4 and ipv6")
+   end
+   if not opts.ipv4_addr and not opts.ipv4_addr then
+      error("need to specify either ipv4addr or ipv6addr")
+   end
+   if opts.ipv4_addr then
+      ipv4_addr, err = IPV4:pton(opts.ipv4_addr)
+      if not ipv4_addr then
+         error(err)
+      end
+   end
+   if opts.ipv6_addr then
+      ipv6_addr, err = IPV6:pton(opts.ipv6_addr)
+      if not ipv6_addr then
+         error(err)
+      end
+      error("ipv6 not yet implemented")
+   end
+   if not opts.dst_mac then
+      error("need to specify dst_mac")
+   end
+   return setmetatable(
+      {ipv4_addr = ipv4_addr,
+       ipv6_addr = ipv6_addr,
+       src_mac = opts.src_mac and Ethernet:pton(opts.src_mac),
+       dst_mac = Ethernet:pton(opts.dst_mac),
+       ttl = opts.ttl or 30},
+      {__index = Rewriting})
 end
 
 function Rewriting:push()
@@ -53,12 +88,13 @@ function Rewriting:process_packet(i, o)
       P.free(p)
       return
    end
+   local eth_dst = eth_header:dst()
    local l3_type = eth_header:type()
    if not (l3_type == L3_IPV4 or l3_type == L3_IPV6) then
       P.free(p)
       return
    end
-   -- TODO consider moving packet parsing after ethernet into go
+   -- Maybe consider moving packet parsing after ethernet into go?
    local ip_class = eth_header:upper_layer()
 
    -- TODO should we check the length of the packet and discard any
@@ -70,20 +106,11 @@ function Rewriting:process_packet(i, o)
    end
    local ip_src = ip_header:src()
    local ip_dst = ip_header:dst()
-   -- TODO should we decrement the inner TTL too?
-   --      (and recalculate the inner checksum)
-   local ip_ttl, l4_type
+   local l4_type
    if l3_type == L3_IPV4 then
-      ip_ttl = ip_header:ttl() - 1
       l4_type = ip_header:protocol()
    else
-      ip_ttl = ip_header:hop_limit() - 1
       l4_type = ip_header:next_header()
-   end
-   if ip_ttl <= 0 then
-      -- TODO should we send a time-exceeded?
-      P.free(p)
-      return
    end
    if not (l4_type == L4_TCP or l4_type == L4_UDP) then
       P.free(p)
@@ -113,19 +140,19 @@ function Rewriting:process_packet(i, o)
    local gre_header = GRE:new({protocol = l3_type})
    datagram:push(gre_header)
 
-   -- TODO figure out source IP
-   -- TODO should we inherit ecn, id, fragmentation etc from the
-   --      underlying packet?
-   -- TODO should we emit IPV4 or IPV6?
-   local outer_ip_header = IPV4:new({dst = backend,
+   -- TODO handle fragmentation
+   -- TODO Be able to emit both IPV4 and IPV6
+   local outer_ip_header = IPV4:new({src = self.ipv4_addr,
+                                     dst = backend,
                                      protocol = L4_GRE,
-                                     ttl = ip_ttl})
+                                     ttl = self.ttl})
    outer_ip_header:total_length(
       payload_len + gre_header:sizeof() + outer_ip_header:sizeof())
    datagram:push(outer_ip_header)
 
-   -- TODO figure out destination and source MAC addresses
-   local outer_eth_header = Ethernet:new({type = L3_IPV4})
+   local outer_eth_header = Ethernet:new({src = self.src_mac or eth_dst,
+                                          dst = self.dst_mac,
+                                          type = L3_IPV4})
    datagram:push(outer_eth_header)
 
    datagram:commit()
