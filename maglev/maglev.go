@@ -18,14 +18,14 @@ type Table struct {
 	m           uint64 //size of the lookup table
 	permutation [][]uint64
 	lookup      []int64
-	names    []string
+	names       []string
 }
 
 func New(names []string, m uint64) *Table {
 	mag := &Table{
-		n:			uint64(len(names)),
-		m:			m,
-		names:	names,
+		n:     uint64(len(names)),
+		m:     m,
+		names: names,
 	}
 	mag.generatePermutations()
 	mag.populate()
@@ -71,7 +71,7 @@ func (t *Table) generatePermutations() {
 		for j := uint64(0); j < t.m; j++ {
 			p[j] = idx
 			idx += skip
-			if idx >= t.m{
+			if idx >= t.m {
 				idx -= t.m
 			}
 		}

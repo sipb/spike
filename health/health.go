@@ -1,26 +1,24 @@
 package health
 
 import (
-	//import libraries
 	"fmt"
-	"net/http"
+	"github.com/sipb/spike/maglev"
 	"io/ioutil"
-	"time"
-	"../maglev"
+	"net/http"
 	"strings"
+	"time"
 )
 
 type Server struct {
-	health bool
+	health  bool
 	service string
 }
 
 type Servers map[string]*Server
 
-
-func Serverstring(servers map[string]*Server) []string{
+func Serverstring(servers map[string]*Server) []string {
 	var names []string
-	for k:= range servers{
+	for k := range servers {
 		names = append(names, k)
 	}
 	return names
@@ -32,13 +30,13 @@ func Addserver(servers map[string]*Server, ip string, service string) {
 }
 
 //removes server from servers hash table
-func Rmserver(servers map[string]*Server, ip string){
+func Rmserver(servers map[string]*Server, ip string) {
 	delete(servers, ip)
 }
 
 //runs health checks on all servers
-func Loopservers(mm *maglev.Table, servers map[string]*Server, num float64, timeout int){
-	for k:= range servers{
+func Loopservers(mm *maglev.Table, servers map[string]*Server, num float64, timeout int) {
+	for k := range servers {
 		go loop(mm, servers, k, num, timeout)
 	}
 }
@@ -53,7 +51,7 @@ func loop(mm *maglev.Table, servers map[string]*Server, ip string, num float64, 
 		time.Sleep(num * time.Millisecond)
 		//fmt.Println(ip, health(ip), "\n", count, servers)
 
-		if health(ip) != true{
+		if health(ip) != true {
 			count += 1
 			fmt.Println(count)
 		}
@@ -64,7 +62,7 @@ func loop(mm *maglev.Table, servers map[string]*Server, ip string, num float64, 
 			mm.Add(ip)
 		}
 
-		if count >= timeout{ //change this later
+		if count >= timeout { //change this later
 			servers[ip].health = false
 			mm.Remove(ip)
 		}
@@ -73,7 +71,7 @@ func loop(mm *maglev.Table, servers map[string]*Server, ip string, num float64, 
 }
 
 //checks health of server
-func health(ip string) bool{
+func health(ip string) bool {
 	resp, _ := http.Get(ip)
 	bytes, _ := ioutil.ReadAll(resp.Body)
 
@@ -83,7 +81,7 @@ func health(ip string) bool{
 		return false
 	}
 
-	if strings.Contains(string(bytes),"healthy") {
+	if strings.Contains(string(bytes), "healthy") {
 		return true
 	}
 
