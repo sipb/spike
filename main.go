@@ -7,6 +7,7 @@ import (
 	"github.com/sipb/spike/maglev"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -16,10 +17,10 @@ func main() {
 	health.Addserver(servers, "http://cheesy-fries.mit.edu/health", "service")
 	health.Addserver(servers, "http://strawberry-habanero.mit.edu/health", "service")
 
-	names := health.Serverstring(servers)
-	mm := maglev.New(names, lookupSizeM)
+	backends := health.Serverstring(servers)
+	mm := maglev.New(backends, lookupSizeM)
 
-	health.Loopservers(mm, servers, 100, 500)
+	health.Loopservers(mm, servers, 100*time.Millisecond, 500*time.Millisecond)
 
 	ret := make(map[string]string)
 	packets := []string{
@@ -38,15 +39,16 @@ func main() {
 		fmt.Printf("%v: %v\n", k, v)
 	}
 
-	//takes user input command to add or remove server
+	// takes user input command to add or remove server
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		var input = scanner.Text()
 		fmt.Println("Executing: ", input)
 		words := strings.Fields(input)
 
-		//add server works but rm server makes loopserver in line 27 crash
-		//need to implement channel...?
+		// FIXME
+		// addserver works but rmserver makes loopserver in line 27 crash
+		// need to implement channel...?
 		if strings.Contains(input, "rmserver") {
 			health.Rmserver(servers, words[1])
 			fmt.Println(servers)

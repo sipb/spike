@@ -1,77 +1,85 @@
 package health
 
 import (
-	"fmt"
 	"github.com/sipb/spike/maglev"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 )
 
+// TODO use callback functions instead of depending on maglev
+
+// A Server represents a backend service
 type Server struct {
 	health  bool
 	service string
 }
 
+// Servers maps backends to services
 type Servers map[string]*Server
 
-func Serverstring(servers map[string]*Server) []string {
-	var names []string
+// TODO write these functions as methods on Servers
+
+// Serverstring returns the backends in servers
+func Serverstring(servers Servers) []string {
+	var backends []string
 	for k := range servers {
-		names = append(names, k)
+		backends = append(backends, k)
 	}
-	return names
+	return backends
 }
 
-//adds server to servers hash table
-func Addserver(servers map[string]*Server, ip string, service string) {
+// Addserver adds a server to the servers hash table
+func Addserver(servers Servers, ip string, service string) {
 	servers[ip] = &Server{false, service}
 }
 
-//removes server from servers hash table
-func Rmserver(servers map[string]*Server, ip string) {
+// Rmserver removes a server from the servers hash table
+func Rmserver(servers Servers, ip string) {
 	delete(servers, ip)
 }
 
-//runs health checks on all servers
-func Loopservers(mm *maglev.Table, servers map[string]*Server, num float64, timeout int) {
+// Loopservers runs health checking asynchronously on all servers
+func Loopservers(mm *maglev.Table, servers Servers,
+	pollDelay time.Duration, timeout time.Duration) {
 	for k := range servers {
-		go loop(mm, servers, k, num, timeout)
+		go loop(mm, servers, k, pollDelay, timeout)
 	}
 }
 
-//runs health check on a single server
-func loop(mm *maglev.Table, servers map[string]*Server, ip string, num float64, timeout int) {
-	count := 0
+// Run health checking on a single server
+func loop(mm *maglev.Table, servers Servers, ip string,
+	pollDelay time.Duration, timeout time.Duration) {
+	start := time.Now()
+
+	// XXX unsynchronized writes are unsafe!
 
 	for {
-		num := time.Duration(num)
-
-		time.Sleep(num * time.Millisecond)
-		//fmt.Println(ip, health(ip), "\n", count, servers)
-
-		if health(ip) != true {
-			count += 1
-			fmt.Println(count)
+		if health(ip) {
+			start = time.Now()
+			if !servers[ip].health {
+				log.Printf("server %v is healthy\n", ip)
+				mm.Add(ip)
+				servers[ip].health = true
+			}
 		}
 
-		if health(ip) == true {
-			count = 0
-			servers[ip].health = true
-			mm.Add(ip)
-		}
-
-		if count >= timeout { //change this later
+		if servers[ip].health && time.Now().After(start.Add(timeout)) {
+			log.Printf("server %v is down!\n", ip)
 			servers[ip].health = false
 			mm.Remove(ip)
 		}
 
+		time.Sleep(pollDelay)
 	}
 }
 
-//checks health of server
+// Check health of server
 func health(ip string) bool {
+	// FIXME check errors
+
 	resp, _ := http.Get(ip)
 	bytes, _ := ioutil.ReadAll(resp.Body)
 
