@@ -13,102 +13,142 @@ const (
 	BigM   = 655373
 )
 
-// Table represents a Maglev hashing table.
-type Table struct {
-	n           uint64 // number of backends
-	m           uint64 // size of the lookup table
-	permutation [][]uint64
-	lookup      []int64
-	backends    []string
+const (
+	offsetKey = uint64(0x35d53c5371bdf886)
+	skipKey   = uint64(0x9e1dbc702649df3a)
+	lookupKey = uint64(0xdd5d635024f19f34)
+)
+
+type Permutation struct {
+	offset uint64
+	skip   uint64
 }
 
-// New returns a new Maglev table with the specified backends and size.
-func New(backends []string, m uint64) *Table {
-	// TODO clone backends
+// Table represents a Maglev hashing table.
+type Table struct {
+	m            uint64 // size of the lookup table
+	backends     []string
+	weights      []uint
+	permutations []Permutation
+	lookup       []int
+}
+
+// New returns a new Maglev table with the specified size.
+func New(m uint64) *Table {
 	mag := &Table{
-		n:        uint64(len(backends)),
-		m:        m,
-		backends: backends,
+		m:            m,
+		backends:     nil,
+		weights:      nil,
+		permutations: nil,
+		lookup:       nil,
 	}
-	mag.generatePermutations()
-	mag.populate()
 	return mag
 }
 
-// Add a backend to the table.
-// FIXME make this idempotent
-func (t *Table) Add(backend string) {
-	t.backends = append(t.backends, backend)
-	t.n++
-	t.generatePermutations()
-	t.populate()
-}
-
-// Remove a backend from the table.
-func (t *Table) Remove(backend string) {
-	for i, v := range t.backends {
-		if v == backend {
-			t.backends = append(t.backends[:i], t.backends[i+1:]...)
-			t.n--
-			t.generatePermutations()
+// SetWeight sets the weight of the given backend to weight, adding it
+// to the table if necessary.
+func (t *Table) SetWeight(backend string, weight uint) {
+	for i, b := range t.backends {
+		if backend == b {
+			t.weights[i] = weight
 			t.populate()
 			return
 		}
 	}
+
+	t.backends = append(t.backends, backend)
+	t.weights = append(t.weights, weight)
+	offset := siphash.Hash(offsetKey, 0, []byte(backend)) % t.m
+	skip := siphash.Hash(skipKey, 0, []byte(backend)) % (t.m - 1) + 1
+	t.permutations = append(t.permutations, Permutation{offset, skip})
+
+	t.populate()
 }
 
-// Lookup looks up an entry in the table and returns the associated backend.
-func (t *Table) Lookup(obj string) string {
-	key := siphash.Hash(0xdeadbabe, 0, []byte(obj))
-	return t.backends[t.lookup[key%t.m]]
-}
+// Compact deletes entries from the table with weight 0
+func (t *Table) Compact() {
+	var newBackends []string
+	var newWeights []uint
+	var newPermutations []Permutation
 
-// TODO don't actually generate permutations; just store the linear function
-func (t *Table) generatePermutations() {
-	if len(t.backends) == 0 {
-		return
-	}
-
-	for _, backend := range t.backends {
-		b := []byte(backend)
-		// FIXME use two different hashes for clarity instead of bit-fiddling
-		h := siphash.Hash(0xdeadbeefcafebabe, 0, b)
-		offset, skip := (h>>32)%t.m, ((h&0xffffffff)%(t.m-1) + 1)
-		p := make([]uint64, t.m)
-		idx := offset
-		for j := uint64(0); j < t.m; j++ {
-			p[j] = idx
-			idx += skip
-			if idx >= t.m {
-				idx -= t.m
-			}
+	for i, w := range t.weights {
+		if w > 0 {
+			newBackends = append(newBackends, t.backends[i])
+			newWeights = append(newWeights, w)
+			newPermutations = append(newPermutations, t.permutations[i])
 		}
-
-		t.permutation = append(t.permutation, p)
 	}
+	t.backends = newBackends
+	t.weights = newWeights
+	t.permutations = newPermutations
+	t.populate()
+}
+
+// Add adds a backend to the table with weight 1.
+func (t *Table) Add(backend string) {
+	t.SetWeight(backend, 1)
+}
+
+// Remove removes a backend from the table by setting its weight to 0.
+func (t *Table) Remove(backend string) {
+	t.SetWeight(backend, 0)
+}
+
+// Lookup looks up an entry in the table and returns the associated
+// backend.
+func (t *Table) Lookup(obj string) (string, bool) {
+	if t.lookup == nil {
+		return "", false
+	}
+	key := siphash.Hash(lookupKey, 0, []byte(obj))
+	return t.backends[t.lookup[key%t.m]], true
 }
 
 func (t *Table) populate() {
-	next := make([]uint64, t.n)
-	entry := make([]int64, t.m)
+	nonzero := false
+	for _, w := range t.weights {
+		if w > 0 {
+			nonzero = true
+			break
+		}
+	}
+	if !nonzero {
+		t.lookup = nil
+		return
+	}
+
+	loc := make([]uint64, len(t.backends))
+	for i, p := range t.permutations {
+		loc[i] = p.offset
+	}
+	entry := make([]int, t.m)
 	for j := range entry {
 		entry[j] = -1
 	}
+	var inserted uint64
 
-	var n uint64
 	for {
-		for i := uint64(0); i < t.n; i++ {
-			c := t.permutation[i][next[i]]
-			for entry[c] >= 0 {
-				next[i]++
-				c = t.permutation[i][next[i]]
-			}
-			entry[c] = int64(i)
-			next[i]++
-			n++
-			if n == t.m {
-				t.lookup = entry
-				return
+		for i, w := range t.weights {
+			for j := uint(0); j < w; j++ {
+				c := loc[i]
+				for entry[c] >= 0 {
+					c += t.permutations[i].skip
+					if c >= t.m {
+						c -= t.m
+					}
+				}
+				entry[c] = i
+				c += t.permutations[i].skip
+				if c >= t.m {
+					c -= t.m
+				}
+				loc[i] = c
+
+				inserted++
+				if inserted == t.m {
+					t.lookup = entry
+					return
+				}
 			}
 		}
 	}
