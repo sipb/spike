@@ -5,6 +5,7 @@ package maglev
 
 import (
 	"github.com/dchest/siphash"
+	"sync"
 )
 
 // Prime numbers of varying scale
@@ -19,7 +20,7 @@ const (
 	lookupKey = uint64(0xdd5d635024f19f34)
 )
 
-type Permutation struct {
+type permutation struct {
 	offset uint64
 	skip   uint64
 }
@@ -29,18 +30,15 @@ type Table struct {
 	m            uint64 // size of the lookup table
 	backends     []string
 	weights      []uint
-	permutations []Permutation
+	permutations []permutation
 	lookup       []int
+	mutex sync.RWMutex
 }
 
 // New returns a new Maglev table with the specified size.
 func New(m uint64) *Table {
 	mag := &Table{
 		m:            m,
-		backends:     nil,
-		weights:      nil,
-		permutations: nil,
-		lookup:       nil,
 	}
 	return mag
 }
@@ -48,6 +46,9 @@ func New(m uint64) *Table {
 // SetWeight sets the weight of the given backend to weight, adding it
 // to the table if necessary.
 func (t *Table) SetWeight(backend string, weight uint) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
 	for i, b := range t.backends {
 		if backend == b {
 			t.weights[i] = weight
@@ -59,17 +60,20 @@ func (t *Table) SetWeight(backend string, weight uint) {
 	t.backends = append(t.backends, backend)
 	t.weights = append(t.weights, weight)
 	offset := siphash.Hash(offsetKey, 0, []byte(backend)) % t.m
-	skip := siphash.Hash(skipKey, 0, []byte(backend)) % (t.m - 1) + 1
-	t.permutations = append(t.permutations, Permutation{offset, skip})
+	skip := siphash.Hash(skipKey, 0, []byte(backend))%(t.m-1) + 1
+	t.permutations = append(t.permutations, permutation{offset, skip})
 
 	t.populate()
 }
 
 // Compact deletes entries from the table with weight 0
 func (t *Table) Compact() {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
 	var newBackends []string
 	var newWeights []uint
-	var newPermutations []Permutation
+	var newPermutations []permutation
 
 	for i, w := range t.weights {
 		if w > 0 {
@@ -97,6 +101,9 @@ func (t *Table) Remove(backend string) {
 // Lookup looks up an entry in the table and returns the associated
 // backend.
 func (t *Table) Lookup(obj string) (string, bool) {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+
 	if t.lookup == nil {
 		return "", false
 	}
