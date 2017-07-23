@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -12,15 +13,46 @@ import (
 
 func main() {
 	const lookupSizeM = 11
-	servers := make(health.Servers)
 
-	health.Addserver(servers, "http://cheesy-fries.mit.edu/health", "service")
-	health.Addserver(servers, "http://strawberry-habanero.mit.edu/health", "service")
+	backends := map[string]struct {
+		ip   string
+		quit chan struct{}
+	}{
+		"http://cheesy-fries.mit.edu/health":        {"1.2.3.4", nil},
+		"http://strawberry-habanero.mit.edu/health": {"5.6.7.8", nil},
+	}
 
-	backends := health.Serverstring(servers)
-	mm := maglev.New(backends, lookupSizeM)
+	ips := make([]string, len(backends))
+	i := 0
+	for _, serviceInfo := range backends {
+		ips[i] = serviceInfo.ip
+		i++
+	}
 
-	health.Loopservers(mm, servers, 100*time.Millisecond, 500*time.Millisecond)
+	// FIXME synchronize access to mm
+	mm := maglev.New(ips, lookupSizeM)
+
+	for service, serviceInfo := range backends {
+		updates, quit := health.Check(service,
+			100*time.Millisecond, 500*time.Millisecond)
+		serviceInfo.quit = quit
+		go func() {
+			for {
+				up, ok := <-updates
+				if !ok {
+					mm.Remove(serviceInfo.ip)
+					return
+				}
+				if up {
+					log.Printf("backend %v is healthy\n", service)
+					mm.Add(serviceInfo.ip)
+				} else {
+					log.Printf("backend %v is down!\n", service)
+					mm.Remove(serviceInfo.ip)
+				}
+			}
+		}()
+	}
 
 	ret := make(map[string]string)
 	packets := []string{
@@ -41,22 +73,30 @@ func main() {
 
 	// takes user input command to add or remove server
 	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		var input = scanner.Text()
-		fmt.Println("Executing: ", input)
+	for {
+		fmt.Print("> ")
+		if !scanner.Scan() {
+			break
+		}
+		input := scanner.Text()
 		words := strings.Fields(input)
 
-		// FIXME
-		// addserver works but rmserver makes loopserver in line 27 crash
-		// need to implement channel...?
-		if strings.Contains(input, "rmserver") {
-			health.Rmserver(servers, words[1])
-			fmt.Println(servers)
+		if len(words) < 1 {
+			continue
 		}
 
-		if strings.Contains(input, "addserver") {
-			health.Addserver(servers, words[1], words[2])
-			fmt.Println(servers)
+		switch words[0] {
+		case "rmserver":
+			// TODO destroy checker
+			fmt.Println("not implemented")
+			continue
+		case "addserver":
+			// TODO spawn new checker
+			fmt.Println("not implemented")
+			continue
+		default:
+			fmt.Println("?")
+			continue
 		}
 	}
 }

@@ -36,6 +36,7 @@ func New(backends []string, m uint64) *Table {
 }
 
 // Add a backend to the table.
+// FIXME make this idempotent
 func (t *Table) Add(backend string) {
 	t.backends = append(t.backends, backend)
 	t.n++
