@@ -29,6 +29,7 @@ func check(healthService string,
 	for {
 		select {
 		case <-quit:
+			updates <- false
 			return
 		default:
 		}
