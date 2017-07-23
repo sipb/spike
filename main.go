@@ -5,56 +5,120 @@ import (
 	"fmt"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
+	"log"
 	"os"
 	"strings"
+	"time"
 )
+
+func lookupPackets(mm *maglev.Table, packets []string) map[string]string {
+	ret := make(map[string]string)
+	for _, p := range packets {
+		if serv, ok := mm.Lookup(p); ok {
+			ret[p] = serv
+		} else {
+			ret[p] = "(no value)"
+		}
+	}
+	return ret
+}
+
+type serviceInfo struct {
+	ip   string
+	quit chan struct{}
+}
+
+func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
+	updates, quit := health.Check(service,
+		100*time.Millisecond, 500*time.Millisecond)
+	info.quit = quit
+	go func() {
+		for {
+			up, ok := <-updates
+			if !ok {
+				return
+			}
+			if up {
+				log.Printf("backend %v is healthy\n", service)
+				mm.Add(info.ip)
+			} else {
+				log.Printf("backend %v is down!\n", service)
+				mm.Remove(info.ip)
+			}
+		}
+	}()
+}
 
 func main() {
 	const lookupSizeM = 11
-	servers := make(health.Servers)
 
-	health.Addserver(servers, "http://cheesy-fries.mit.edu/health", "service")
-	health.Addserver(servers, "http://strawberry-habanero.mit.edu/health", "service")
+	backends := map[string]*serviceInfo{
+		"http://cheesy-fries.mit.edu/health":        &serviceInfo{"1.2.3.4", nil},
+		"http://strawberry-habanero.mit.edu/health": &serviceInfo{"5.6.7.8", nil},
+	}
 
-	names := health.Serverstring(servers)
-	mm := maglev.New(names, lookupSizeM)
+	mm := maglev.New(lookupSizeM)
 
-	health.Loopservers(mm, servers, 100, 500)
+	for service, info := range backends {
+		startChecker(mm, service, info)
+	}
 
-	ret := make(map[string]string)
-	packets := []string{
+	testPackets := []string{
 		"19.168.124.100/572/81.9.179.69/80/4",
 		"192.16.124.100/50270/81.209.179.69/80/6",
 		"12.168.12.100/50268/81.209.179.69/80/6",
 		"192.168.1.0/50266/81.209.179.69/80/6",
 		"92.168.124.100/50264/81.209.179.69/80/6",
 	}
-	for i := 0; i < len(packets); i++ {
-		serv := mm.Lookup(packets[i])
-		ret[packets[i]] = serv
-	}
-	fmt.Printf("5-tuple to Server mapping:\n")
-	for k, v := range ret {
-		fmt.Printf("%v: %v\n", k, v)
-	}
 
-	//takes user input command to add or remove server
+	// takes user input command to add or remove server
 	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		var input = scanner.Text()
-		fmt.Println("Executing: ", input)
+	for {
+		fmt.Print("> ")
+		if !scanner.Scan() {
+			fmt.Println()
+			break
+		}
+		input := scanner.Text()
 		words := strings.Fields(input)
 
-		//add server works but rm server makes loopserver in line 27 crash
-		//need to implement channel...?
-		if strings.Contains(input, "rmserver") {
-			health.Rmserver(servers, words[1])
-			fmt.Println(servers)
+		if len(words) < 1 {
+			continue
 		}
 
-		if strings.Contains(input, "addserver") {
-			health.Addserver(servers, words[1], words[2])
-			fmt.Println(servers)
+		switch words[0] {
+		case "rmserver":
+			if len(words) != 2 {
+				fmt.Println("?")
+				continue
+			}
+			info, ok := backends[words[1]]
+			if !ok {
+				fmt.Println("no such backend")
+				continue
+			}
+			close(info.quit)
+			delete(backends, words[1])
+		case "addserver":
+			if len(words) != 3 {
+				fmt.Println("?")
+				continue
+			}
+			if _, ok := backends[words[1]]; ok {
+				fmt.Println("backend already exists")
+				continue
+			}
+			info := &serviceInfo{words[2], nil}
+			startChecker(mm, words[1], info)
+			backends[words[1]] = info
+		case "lookup":
+			l := lookupPackets(mm, testPackets)
+			fmt.Printf("5-tuple to Server mapping:\n")
+			for _, p := range testPackets {
+				fmt.Printf("%v: %v\n", p, l[p])
+			}
+		default:
+			fmt.Println("?")
 		}
 	}
 }

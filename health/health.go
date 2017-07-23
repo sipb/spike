@@ -1,78 +1,61 @@
 package health
 
 import (
-	"fmt"
-	"github.com/sipb/spike/maglev"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
 )
 
-type Server struct {
-	health  bool
-	service string
+// Check runs asynchronous health checking.  The first returned channel
+// receives updates on the health state of the backend.  Write to the
+// second to kill the health checker.
+func Check(healthService string,
+	pollDelay time.Duration, timeout time.Duration) (chan bool, chan struct{}) {
+	updates := make(chan bool)
+	quit := make(chan struct{})
+	go check(healthService, pollDelay, timeout, updates, quit)
+	return updates, quit
 }
 
-type Servers map[string]*Server
+func check(healthService string,
+	pollDelay time.Duration, timeout time.Duration,
+	updates chan bool, quit chan struct{}) {
+	defer close(updates)
 
-func Serverstring(servers map[string]*Server) []string {
-	var names []string
-	for k := range servers {
-		names = append(names, k)
-	}
-	return names
-}
-
-//adds server to servers hash table
-func Addserver(servers map[string]*Server, ip string, service string) {
-	servers[ip] = &Server{false, service}
-}
-
-//removes server from servers hash table
-func Rmserver(servers map[string]*Server, ip string) {
-	delete(servers, ip)
-}
-
-//runs health checks on all servers
-func Loopservers(mm *maglev.Table, servers map[string]*Server, num float64, timeout int) {
-	for k := range servers {
-		go loop(mm, servers, k, num, timeout)
-	}
-}
-
-//runs health check on a single server
-func loop(mm *maglev.Table, servers map[string]*Server, ip string, num float64, timeout int) {
-	count := 0
+	start := time.Now()
+	healthy := false
 
 	for {
-		num := time.Duration(num)
-
-		time.Sleep(num * time.Millisecond)
-		//fmt.Println(ip, health(ip), "\n", count, servers)
-
-		if health(ip) != true {
-			count += 1
-			fmt.Println(count)
+		select {
+		case <-quit:
+			updates <- false
+			return
+		default:
 		}
 
-		if health(ip) == true {
-			count = 0
-			servers[ip].health = true
-			mm.Add(ip)
+		if health(healthService) {
+			start = time.Now()
+			if !healthy {
+				healthy = true
+				updates <- true
+			}
 		}
 
-		if count >= timeout { //change this later
-			servers[ip].health = false
-			mm.Remove(ip)
+		if healthy && time.Now().After(start.Add(timeout)) {
+			healthy = false
+			updates <- false
 		}
 
+		time.Sleep(pollDelay)
 	}
 }
 
-//checks health of server
-func health(ip string) bool {
-	resp, _ := http.Get(ip)
+// health checks the given health service
+func health(healthService string) bool {
+	// FIXME check errors
+
+	resp, _ := http.Get(healthService)
 	bytes, _ := ioutil.ReadAll(resp.Body)
 
 	resp.Body.Close()
