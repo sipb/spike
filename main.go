@@ -23,10 +23,10 @@ func lookupPackets(mm *maglev.Table, packets []string) map[string]string {
 	return ret
 }
 
-	type serviceInfo struct {
-		ip   string
-		quit chan struct{}
-	}
+type serviceInfo struct {
+	ip   string
+	quit chan struct{}
+}
 
 func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 	updates, quit := health.Check(service,
