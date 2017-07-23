@@ -26,10 +26,12 @@ func lookupPackets(mm *maglev.Table, packets []string) map[string]string {
 func main() {
 	const lookupSizeM = 11
 
-	backends := map[string]struct {
+	type serviceInfo struct {
 		ip   string
 		quit chan struct{}
-	}{
+	}
+
+	backends := map[string]serviceInfo{
 		"http://cheesy-fries.mit.edu/health":        {"1.2.3.4", nil},
 		"http://strawberry-habanero.mit.edu/health": {"5.6.7.8", nil},
 	}
@@ -37,29 +39,26 @@ func main() {
 	// FIXME synchronize access to mm
 	mm := maglev.New(lookupSizeM)
 
-	for service, serviceInfo := range backends {
+	for service, info := range backends {
 		updates, quit := health.Check(service,
 			100*time.Millisecond, 500*time.Millisecond)
-		serviceInfo.quit = quit
-		go func(service string, serviceInfo struct {
-			ip   string
-			quit chan struct{}
-		}) {
+		info.quit = quit
+		go func(service string, info serviceInfo) {
 			for {
 				up, ok := <-updates
 				if !ok {
-					mm.Remove(serviceInfo.ip)
+					mm.Remove(info.ip)
 					return
 				}
 				if up {
 					log.Printf("backend %v is healthy\n", service)
-					mm.Add(serviceInfo.ip)
+					mm.Add(info.ip)
 				} else {
 					log.Printf("backend %v is down!\n", service)
-					mm.Remove(serviceInfo.ip)
+					mm.Remove(info.ip)
 				}
 			}
-		}(service, serviceInfo)
+		}(service, info)
 	}
 
 	testPackets := []string{
@@ -95,7 +94,6 @@ func main() {
 			fmt.Println("not implemented")
 			continue
 		case "lookup":
-			fmt.Printf("5-tuple to Server mapping:\n")
 			l := lookupPackets(mm, testPackets)
 			fmt.Printf("5-tuple to Server mapping:\n")
 			for _, p := range testPackets {

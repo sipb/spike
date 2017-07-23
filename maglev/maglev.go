@@ -32,13 +32,13 @@ type Table struct {
 	weights      []uint
 	permutations []permutation
 	lookup       []int
-	mutex sync.RWMutex
+	mutex        sync.RWMutex
 }
 
 // New returns a new Maglev table with the specified size.
 func New(m uint64) *Table {
 	mag := &Table{
-		m:            m,
+		m: m,
 	}
 	return mag
 }
