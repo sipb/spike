@@ -1,31 +1,69 @@
 package main
 
+import "C"
+
 import (
 	"bufio"
 	"fmt"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
 	"log"
+	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
-func lookupPackets(mm *maglev.Table, packets []string) map[string]string {
-	ret := make(map[string]string)
-	for _, p := range packets {
-		if serv, ok := mm.Lookup(p); ok {
-			ret[p] = serv
-		} else {
-			ret[p] = "(no value)"
-		}
-	}
-	return ret
+type serviceInfo struct {
+	ip   []byte
+	quit chan<- struct{}
 }
 
-type serviceInfo struct {
-	ip   string
-	quit chan struct{}
+var globalMaglev *maglev.Table
+var globalServices map[string]*serviceInfo
+var globalServicesLock sync.Mutex
+
+// Init initializes the spike health checker and consistent hashing modules.
+//export Init
+func Init() {
+	// TODO dynamically rebuild maglev table with different M
+	globalMaglev = maglev.New(maglev.SmallM)
+	globalServices = make(map[string]*serviceInfo)
+}
+
+// AddBackend adds a new backend to the health checker.
+//export AddBackend
+func AddBackend(service string, ip []byte) {
+	// FIXME make copies of passed-in data to avoid lua gc
+	info := &serviceInfo{ip, nil}
+	startChecker(globalMaglev, service, info)
+	globalServicesLock.Lock()
+	defer globalServicesLock.Unlock()
+	globalServices[service] = info
+}
+
+// RemoveBackend removes a backend from the health checker.
+//export RemoveBackend
+func RemoveBackend(service string) {
+	globalServicesLock.Lock()
+	defer globalServicesLock.Unlock()
+	info, ok := globalServices[service]
+	if !ok {
+		return
+	}
+	close(info.quit)
+	delete(globalServices, service)
+}
+
+/*
+TODO use separate arguments for the pieces - among other things we will
+     need to discriminate on destination VIP
+*/
+// Lookup determines the backend associated with a five-tuple
+//export Lookup
+func Lookup(fiveTuple []byte) ([]byte, bool) {
+	return globalMaglev.Lookup(fiveTuple)
 }
 
 func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
@@ -53,8 +91,10 @@ func main() {
 	const lookupSizeM = 11
 
 	backends := map[string]*serviceInfo{
-		"http://cheesy-fries.mit.edu/health":        &serviceInfo{"1.2.3.4", nil},
-		"http://strawberry-habanero.mit.edu/health": &serviceInfo{"5.6.7.8", nil},
+		"http://cheesy-fries.mit.edu/health": &serviceInfo{
+			[]byte{1, 2, 3, 4}, nil},
+		"http://strawberry-habanero.mit.edu/health": &serviceInfo{
+			[]byte{5, 6, 7, 8}, nil},
 	}
 
 	mm := maglev.New(lookupSizeM)
@@ -108,7 +148,7 @@ func main() {
 				fmt.Println("backend already exists")
 				continue
 			}
-			info := &serviceInfo{words[2], nil}
+			info := &serviceInfo{net.ParseIP(words[2]), nil}
 			startChecker(mm, words[1], info)
 			backends[words[1]] = info
 		case "lookup":
@@ -121,4 +161,16 @@ func main() {
 			fmt.Println("?")
 		}
 	}
+}
+
+func lookupPackets(mm *maglev.Table, packets []string) map[string][]byte {
+	ret := make(map[string][]byte)
+	for _, p := range packets {
+		if serv, ok := mm.Lookup([]byte(p)); ok {
+			ret[p] = serv
+		} else {
+			ret[p] = nil
+		}
+	}
+	return ret
 }
