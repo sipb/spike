@@ -4,6 +4,12 @@ local GRE = require("lib.protocol.gre")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
+local bit = require("bit")
+local ffi = require("ffi")
+local band = bit.band
+local rshift = bit.rshift
+
+local godefs = require("godefs")
 
 local L3_IPV4 = 0x0800
 local L3_IPV6 = 0x86DD
@@ -13,19 +19,39 @@ local L4_GRE = 0x2f
 
 _G._NAME = "rewriting"  -- Snabb requires this for some reason
 
+local ipv4_five_tuple = ffi.typeof("char[14]")
+local ipv4_five_tuple_len = 14
+local ipv6_five_tuple = ffi.typeof("char[38]")
+local ipv6_five_tuple_len = 38
 
--- Compute the five-tuple hash of a packet given the five-tuple
-local function hash_five_tuple(ip_protocol, src, src_port, dst, dst_port)
-   -- TODO implement this for real in go
-   --      (currently implements the random oracle model)
-   return 4
+
+-- Create a five-tuple
+local function five_tuple(ip_protocol, src, src_port, dst, dst_port)
+   local t, t_len
+   if ip_protocol == L3_IPV4 then
+      t = ipv4_five_tuple()
+      t_len = ipv4_five_tuple_len
+      ffi.copy(t + 6, src, 4)
+      ffi.copy(t + 10, dst, 4)
+   else
+      t = ipv6_five_tuple()
+      t_len = ipv6_five_tuple_len
+      ffi.copy(t + 6, src, 16)
+      ffi.copy(t + 22, dst, 16)
+   end
+   t[0] = band(ip_protocol, 0xff)
+   t[1] = band(rshift(ip_protocol, 8), 0xff)
+   t[2] = band(src_port, 0xff)
+   t[3] = band(rshift(src_port, 8), 0xff)
+   t[4] = band(dst_port, 0xff)
+   t[5] = band(rshift(dst_port, 8), 0xff)
+   return t, t_len
 end
 
-
--- Return the backend associated with a hash value
-local function get_backend(five_hash)
-   -- TODO
-   return IPV4:pton("66.66.66.66")
+-- Return the backend associated with a five-tuple
+local function get_backend(five_tuple, five_tuple_len)
+   -- return IPV4:pton("66.66.66.66"), 4, true
+   return godefs.Lookup(five_tuple, five_tuple_len)
 end
 
 
@@ -126,9 +152,20 @@ function Rewriting:process_packet(i, o)
    local src_port = prot_header:src_port()
    local dst_port = prot_header:dst_port()
 
-   local five_hash = hash_five_tuple(l3_type,
-                                     ip_src, src_port, ip_dst, dst_port)
-   local backend = get_backend(five_hash)
+   local t, t_len = five_tuple(l3_type,
+                               ip_src, src_port, ip_dst, dst_port)
+   local backend, backend_len, ok = get_backend(t, t_len)
+   if ok == 0 then
+      error("lookup failed!") -- TODO should just drop packet
+   end
+   if backend_len == 16 then
+      error("ipv6 output not implemented")
+   elseif backend_len ~= 4 then
+      print("backend length must be 4 (for ipv4) or 16 (for ipv6) got:")
+      print(backend_len)
+      P.free(p)
+      return
+   end
 
    -- unparse L4 and L3
    datagram:unparse(2)

@@ -9,4 +9,13 @@ if [[ -z "$SPIKE" ]]; then
     exit 1
 fi
 
-$SNABB/src/snabb snsh -P $SPIKE/forward/rewriting.lua $SPIKE/forward/spike.lua "$@"
+export LIBSPIKE="$SPIKE/libspike.so"
+SNABB="$SNABB/src/snabb"
+
+if [[ -n "$DEBUG" ]]; then
+    COMMAND="gdb --args $SNABB"
+else
+    COMMAND="$SNABB"
+fi
+
+$COMMAND snsh -P "$SPIKE/forward/?.lua" "$SPIKE/forward/spike.lua" "$@"
