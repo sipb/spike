@@ -4,6 +4,7 @@
 package maglev
 
 import (
+	"bytes"
 	"github.com/dchest/siphash"
 	"sync"
 )
@@ -28,7 +29,7 @@ type permutation struct {
 // Table represents a Maglev hashing table.
 type Table struct {
 	m            uint64 // size of the lookup table
-	backends     []string
+	backends     [][]byte
 	weights      []uint
 	permutations []permutation
 	lookup       []int
@@ -37,20 +38,19 @@ type Table struct {
 
 // New returns a new Maglev table with the specified size.
 func New(m uint64) *Table {
-	mag := &Table{
+	return &Table{
 		m: m,
 	}
-	return mag
 }
 
 // SetWeight sets the weight of the given backend to weight, adding it
 // to the table if necessary.
-func (t *Table) SetWeight(backend string, weight uint) {
+func (t *Table) SetWeight(backend []byte, weight uint) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
 	for i, b := range t.backends {
-		if backend == b {
+		if bytes.Equal(backend, b) {
 			t.weights[i] = weight
 			t.populate()
 			return
@@ -71,7 +71,7 @@ func (t *Table) Compact() {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	var newBackends []string
+	var newBackends [][]byte
 	var newWeights []uint
 	var newPermutations []permutation
 
@@ -89,25 +89,25 @@ func (t *Table) Compact() {
 }
 
 // Add adds a backend to the table with weight 1.
-func (t *Table) Add(backend string) {
+func (t *Table) Add(backend []byte) {
 	t.SetWeight(backend, 1)
 }
 
 // Remove removes a backend from the table by setting its weight to 0.
-func (t *Table) Remove(backend string) {
+func (t *Table) Remove(backend []byte) {
 	t.SetWeight(backend, 0)
 }
 
 // Lookup looks up an entry in the table and returns the associated
 // backend.
-func (t *Table) Lookup(obj string) (string, bool) {
+func (t *Table) Lookup(obj []byte) ([]byte, bool) {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
 
 	if t.lookup == nil {
-		return "", false
+		return nil, false
 	}
-	key := siphash.Hash(lookupKey, 0, []byte(obj))
+	key := siphash.Hash(lookupKey, 0, obj)
 	return t.backends[t.lookup[key%t.m]], true
 }
 

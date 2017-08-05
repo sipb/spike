@@ -1,60 +1,45 @@
 package main
 
+import "C"
+
 import (
 	"bufio"
 	"fmt"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
 	"log"
+	"net"
 	"os"
 	"strings"
 	"time"
 )
 
-func lookupPackets(mm *maglev.Table, packets []string) map[string]string {
-	ret := make(map[string]string)
-	for _, p := range packets {
-		if serv, ok := mm.Lookup(p); ok {
-			ret[p] = serv
-		} else {
-			ret[p] = "(no value)"
-		}
-	}
-	return ret
-}
-
 type serviceInfo struct {
-	ip   string
-	quit chan struct{}
+	ip   []byte
+	quit chan<- struct{}
 }
 
 func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
-	updates, quit := health.Check(service,
+	info.quit = health.CheckFun(service,
+		func() {
+			log.Printf("backend %v is healthy\n", service)
+			mm.Add(info.ip)
+		},
+		func() {
+			log.Printf("backend %v is down\n", service)
+			mm.Remove(info.ip)
+		},
 		100*time.Millisecond, 500*time.Millisecond)
-	info.quit = quit
-	go func() {
-		for {
-			up, ok := <-updates
-			if !ok {
-				return
-			}
-			if up {
-				log.Printf("backend %v is healthy\n", service)
-				mm.Add(info.ip)
-			} else {
-				log.Printf("backend %v is down!\n", service)
-				mm.Remove(info.ip)
-			}
-		}
-	}()
 }
 
 func main() {
 	const lookupSizeM = 11
 
 	backends := map[string]*serviceInfo{
-		"http://cheesy-fries.mit.edu/health":        &serviceInfo{"1.2.3.4", nil},
-		"http://strawberry-habanero.mit.edu/health": &serviceInfo{"5.6.7.8", nil},
+		"http://cheesy-fries.mit.edu/health": &serviceInfo{
+			[]byte{1, 2, 3, 4}, nil},
+		"http://strawberry-habanero.mit.edu/health": &serviceInfo{
+			[]byte{5, 6, 7, 8}, nil},
 	}
 
 	mm := maglev.New(lookupSizeM)
@@ -87,6 +72,12 @@ func main() {
 		}
 
 		switch words[0] {
+		case "help":
+			fmt.Println("commands:")
+			fmt.Println("help")
+			fmt.Println("addserver <service> <IP>")
+			fmt.Println("rmserver <service>")
+			fmt.Println("lookup")
 		case "rmserver":
 			if len(words) != 2 {
 				fmt.Println("?")
@@ -108,7 +99,12 @@ func main() {
 				fmt.Println("backend already exists")
 				continue
 			}
-			info := &serviceInfo{words[2], nil}
+			addr := net.ParseIP(words[2]).To4()
+			if addr == nil {
+				fmt.Println("not an IPv4 address")
+				continue
+			}
+			info := &serviceInfo{addr, nil}
 			startChecker(mm, words[1], info)
 			backends[words[1]] = info
 		case "lookup":
@@ -121,4 +117,16 @@ func main() {
 			fmt.Println("?")
 		}
 	}
+}
+
+func lookupPackets(mm *maglev.Table, packets []string) map[string][]byte {
+	ret := make(map[string][]byte)
+	for _, p := range packets {
+		if serv, ok := mm.Lookup([]byte(p)); ok {
+			ret[p] = serv
+		} else {
+			ret[p] = nil
+		}
+	}
+	return ret
 }
