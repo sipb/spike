@@ -9,7 +9,8 @@ if [[ -z "$SPIKE" ]]; then
     exit 1
 fi
 
-export LIBSPIKE="$SPIKE/libspike.so"
+export LOOKUP_H="$SPIKE/lookup_processed.h"
+export LOOKUP_SO="$SPIKE/lookup.so"
 SNABB="$SNABB/src/snabb"
 
 if [[ -n "$DEBUG" ]]; then

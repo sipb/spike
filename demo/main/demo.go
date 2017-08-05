@@ -11,7 +11,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -20,71 +19,17 @@ type serviceInfo struct {
 	quit chan<- struct{}
 }
 
-var globalMaglev *maglev.Table
-var globalServices map[string]*serviceInfo
-var globalServicesLock sync.Mutex
-
-// Init initializes the spike health checker and consistent hashing modules.
-//export Init
-func Init() {
-	// TODO dynamically rebuild maglev table with different M
-	globalMaglev = maglev.New(maglev.SmallM)
-	globalServices = make(map[string]*serviceInfo)
-}
-
-// AddBackend adds a new backend to the health checker.
-//export AddBackend
-func AddBackend(service string, ip []byte) {
-	// FIXME make copies of passed-in data to avoid lua gc
-	info := &serviceInfo{ip, nil}
-	startChecker(globalMaglev, service, info)
-	globalServicesLock.Lock()
-	defer globalServicesLock.Unlock()
-	globalServices[service] = info
-}
-
-// RemoveBackend removes a backend from the health checker.
-//export RemoveBackend
-func RemoveBackend(service string) {
-	globalServicesLock.Lock()
-	defer globalServicesLock.Unlock()
-	info, ok := globalServices[service]
-	if !ok {
-		return
-	}
-	close(info.quit)
-	delete(globalServices, service)
-}
-
-/*
-TODO use separate arguments for the pieces - among other things we will
-     need to discriminate on destination VIP
-*/
-// Lookup determines the backend associated with a five-tuple
-//export Lookup
-func Lookup(fiveTuple []byte) ([]byte, bool) {
-	return globalMaglev.Lookup(fiveTuple)
-}
-
 func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
-	updates, quit := health.Check(service,
+	info.quit = health.CheckFun(service,
+		func() {
+			log.Printf("backend %v is healthy\n", service)
+			mm.Add(info.ip)
+		},
+		func() {
+			log.Printf("backend %v is down\n", service)
+			mm.Remove(info.ip)
+		},
 		100*time.Millisecond, 500*time.Millisecond)
-	info.quit = quit
-	go func() {
-		for {
-			up, ok := <-updates
-			if !ok {
-				return
-			}
-			if up {
-				log.Printf("backend %v is healthy\n", service)
-				mm.Add(info.ip)
-			} else {
-				log.Printf("backend %v is down!\n", service)
-				mm.Remove(info.ip)
-			}
-		}
-	}()
 }
 
 func main() {
@@ -127,6 +72,12 @@ func main() {
 		}
 
 		switch words[0] {
+		case "help":
+			fmt.Println("commands:")
+			fmt.Println("help")
+			fmt.Println("addserver <service> <IP>")
+			fmt.Println("rmserver <service>")
+			fmt.Println("lookup")
 		case "rmserver":
 			if len(words) != 2 {
 				fmt.Println("?")
@@ -148,7 +99,12 @@ func main() {
 				fmt.Println("backend already exists")
 				continue
 			}
-			info := &serviceInfo{net.ParseIP(words[2]), nil}
+			addr := net.ParseIP(words[2]).To4()
+			if addr == nil {
+				fmt.Println("not an IPv4 address")
+				continue
+			}
+			info := &serviceInfo{addr, nil}
 			startChecker(mm, words[1], info)
 			backends[words[1]] = info
 		case "lookup":

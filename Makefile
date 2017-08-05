@@ -1,9 +1,15 @@
 .PHONY: all clean
 
-all: libspike.so libspike.h
+all: lookup.so lookup_processed.h demo.exe
 
-%.so %.h: main.go health/health.go maglev/maglev.go
-	go build -o $*.so -buildmode=c-shared
+demo.exe: demo/main/demo.go health/health.go maglev/maglev.go
+	go build -o $@ github.com/sipb/spike/demo/main
+
+l%okup.so l%okup.h: lookup/main/lookup.go health/health.go maglev/maglev.go
+	go build -o lookup.so -buildmode=c-shared github.com/sipb/spike/lookup/main
+
+lookup_processed.h: lookup.h
+	gcc -E $< | grep -v '^#' >$@
 
 clean:
-	rm -f libspike.so libspike.h
+	rm -f demo.exe lookup.so lookup.h

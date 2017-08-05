@@ -7,6 +7,26 @@ import (
 	"time"
 )
 
+// CheckFun is a wrapper around Check using callback functions.
+func CheckFun(service string, onUp func(), onDown func(),
+	pollDelay time.Duration, timeout time.Duration) chan<- struct{} {
+	updates, quit := Check(service, pollDelay, timeout)
+	go func() {
+		for {
+			up, ok := <-updates
+			if !ok {
+				return
+			}
+			if up {
+				onUp()
+			} else {
+				onDown()
+			}
+		}
+	}()
+	return quit
+}
+
 // Check runs asynchronous health checking.  The first returned channel
 // receives updates on the health state of the backend.  Write to the
 // second to kill the health checker.
