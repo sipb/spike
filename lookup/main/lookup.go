@@ -23,7 +23,6 @@ var globalServicesLock sync.Mutex
 // Init initializes the spike health checker and consistent hashing modules.
 //export Init
 func Init() {
-	// TODO dynamically rebuild maglev table with different M
 	globalMaglev = maglev.New(maglev.SmallM)
 	globalServices = make(map[string]*serviceInfo)
 }
@@ -56,13 +55,6 @@ func RemoveBackend(service string) {
 }
 
 // Lookup determines the backend associated with a five-tuple
-/*
-TODO use separate arguments for the pieces - among other things we will
-     need to discriminate on destination VIP
-TODO implement connection tracking
-TODO convert all these TODOs into github issues
-TODO write unit tests
-*/
 //export Lookup
 func Lookup(fiveTuple []byte) ([]byte, bool) {
 	return globalMaglev.Lookup(fiveTuple)

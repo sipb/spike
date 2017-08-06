@@ -1,8 +1,3 @@
--- LuaJIT's FFI doesn't have a preprocessor, so we have to include the
--- contents of the cgo header ourselves.  Make sure to keep this up to
--- date with the header file from cgo.
-
--- TODO come up with a better solution than manual preprocessing
 local ffi = require("ffi")
 
 local function read_all(filename)

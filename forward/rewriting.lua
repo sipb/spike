@@ -105,7 +105,6 @@ function Rewriting:push()
 end
 
 function Rewriting:process_packet(i, o)
-   -- SECURITY TODO make sure malformed packets can't break parsing
    local p = L.receive(i)
    local datagram = Datagram:new(p, nil, {delayed_commit = true})
 
@@ -123,8 +122,6 @@ function Rewriting:process_packet(i, o)
    -- Maybe consider moving packet parsing after ethernet into go?
    local ip_class = eth_header:upper_layer()
 
-   -- TODO should we check the length of the packet and discard any
-   --      remainder?
    local ip_header = datagram:parse_match(ip_class)
    if ip_header == nil then
       P.free(p)
@@ -156,15 +153,13 @@ function Rewriting:process_packet(i, o)
                                ip_src, src_port, ip_dst, dst_port)
    local backend, backend_len, ok = get_backend(t, t_len)
    if ok == 0 then
-      error("lookup failed!") -- TODO should just drop packet
+      P.free(p)
+      return
    end
    if backend_len == 16 then
       error("ipv6 output not implemented")
    elseif backend_len ~= 4 then
-      print("backend length must be 4 (for ipv4) or 16 (for ipv6) got:")
-      print(backend_len)
-      P.free(p)
-      return
+      error("backend length must be 4 (for ipv4) or 16 (for ipv6)")
    end
 
    -- unparse L4 and L3
@@ -177,8 +172,6 @@ function Rewriting:process_packet(i, o)
    local gre_header = GRE:new({protocol = l3_type})
    datagram:push(gre_header)
 
-   -- TODO handle fragmentation
-   -- TODO Be able to emit both IPV4 and IPV6
    local outer_ip_header = IPV4:new({src = self.ipv4_addr,
                                      dst = backend,
                                      protocol = L4_GRE,

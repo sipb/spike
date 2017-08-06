@@ -16,14 +16,13 @@ local function runmain()
                      IPV4:pton("1.3.5.7"), 4)
    godefs.AddBackend("http://strawberry-habanero.mit.edu/health",
                      IPV4:pton("2.4.6.8"), 4)
+   C.usleep(3000000) -- wait for backends to come up for demo
    local src_mac, dst_mac, ipv4_addr, incap, outcap = unpack(main.parameters)
 
    local c = config.new()
-   C.usleep(3000000)
    config.app(c, "source", P.PcapReader, incap)
    -- only 1 rewriting app for now, since there's not much benefit to
    -- having more without multithreading
-   -- TODO investigate snabb multithreading
    config.app(c, "rewriting", Rewriting, {src_mac = src_mac,
                                           dst_mac = dst_mac,
                                           ipv4_addr = ipv4_addr})

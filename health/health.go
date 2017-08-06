@@ -83,8 +83,6 @@ func check(
 
 // health checks the given health service
 func health(healthService string) bool {
-	// FIXME check errors
-
 	resp, _ := http.Get(healthService)
 	bytes, _ := ioutil.ReadAll(resp.Body)
 
