@@ -48,33 +48,36 @@ func check(
 	updates chan<- bool,
 	quit <-chan struct{},
 ) {
-	defer close(updates)
+	healthy := false
+	defer func() {
+		if healthy {
+			updates <- false
+		}
+		close(updates)
+	}()
 
 	start := time.Now()
-	healthy := false
+	ticker := time.NewTicker(pollDelay)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-quit:
-			updates <- false
 			return
-		default:
-		}
+		case t := <-ticker.C:
+			if health(healthService) {
+				start = t
+				if !healthy {
+					healthy = true
+					updates <- true
+				}
+			}
 
-		if health(healthService) {
-			start = time.Now()
-			if !healthy {
-				healthy = true
-				updates <- true
+			if healthy && t.After(start.Add(timeout)) {
+				healthy = false
+				updates <- false
 			}
 		}
-
-		if healthy && time.Now().After(start.Add(timeout)) {
-			healthy = false
-			updates <- false
-		}
-
-		time.Sleep(pollDelay)
 	}
 }
 
