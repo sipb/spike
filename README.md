@@ -7,6 +7,7 @@ load balancer, [Maglev][0].
 
 # Dependencies
 
+* Go 1.8
 * [`siphash`](https://github.com/dchest/siphash)
 * [`snabb`](https://github.com/snabbco/snabb)
 

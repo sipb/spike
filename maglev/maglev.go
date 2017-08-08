@@ -39,8 +39,7 @@ type Table struct {
 
 // New returns a new Maglev table with the specified size.
 func New(m uint64) *Table {
-	// Can use 0 rounds in 1.8
-	if !(&big.Int{}).SetUint64(m).ProbablyPrime(10) {
+	if !(&big.Int{}).SetUint64(m).ProbablyPrime(0) {
 		panic("m is not prime")
 	}
 	return &Table{
