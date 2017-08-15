@@ -11,12 +11,19 @@ type entry struct {
 	expire  time.Time
 }
 
+// Cache is a connection-tracking table.  It lazily evicts entries when
+// the backend becomes unhealthy or when the entry expires by not been
+// accessed.
+//
+// Cache is not thread-safe.
 type Cache struct {
 	table  map[uint64]entry
 	miss   func(uint64) (*common.Backend, bool)
 	expiry time.Duration
 }
 
+// New constructs a new connection-tracking table which caches the given
+// function.
 func New(
 	miss func(uint64) (*common.Backend, bool),
 	expiry time.Duration,
@@ -28,6 +35,10 @@ func New(
 	}
 }
 
+// Lookup returns the backend associated with the given key.  If the
+// cached backend is unhealthy, or the key is not cached, it retrieves a
+// backend from the underlying function.  Lookup returns false if no
+// backend is available.
 func (c *Cache) Lookup(key uint64) (*common.Backend, bool) {
 	e, ok := c.table[key]
 	if ok {

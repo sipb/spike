@@ -44,7 +44,7 @@ func New(m uint64) *Table {
 		panic("m is not prime")
 	}
 	return &Table{
-		m: m,
+		m:            m,
 		permutations: make(map[*common.Backend]permutation),
 	}
 }
