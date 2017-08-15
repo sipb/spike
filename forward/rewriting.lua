@@ -50,7 +50,6 @@ end
 
 -- Return the backend associated with a five-tuple
 local function get_backend(five_tuple, five_tuple_len)
-   -- return IPV4:pton("66.66.66.66"), 4, true
    return godefs.Lookup(five_tuple, five_tuple_len)
 end
 
@@ -151,8 +150,8 @@ function Rewriting:process_packet(i, o)
 
    local t, t_len = five_tuple(l3_type,
                                ip_src, src_port, ip_dst, dst_port)
-   local backend, backend_len, ok = get_backend(t, t_len)
-   if ok == 0 then
+   local backend, backend_len = get_backend(t, t_len)
+   if backend_len == 0 then
       P.free(p)
       return
    end

@@ -5,13 +5,16 @@ import "C"
 import (
 	"bufio"
 	"fmt"
-	"github.com/sipb/spike/health"
-	"github.com/sipb/spike/maglev"
 	"log"
 	"net"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/sipb/spike/common"
+	"github.com/sipb/spike/health"
+	"github.com/sipb/spike/maglev"
+	"github.com/sipb/spike/tracking"
 )
 
 type serviceInfo struct {
@@ -20,16 +23,27 @@ type serviceInfo struct {
 }
 
 func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
-	info.quit = health.CheckFun(service,
+	quit := make(chan struct{})
+	info.quit = quit
+	backends := make(chan *common.Backend, 1)
+	health.CheckFun(service,
 		func() {
 			log.Printf("backend %v is healthy\n", service)
-			mm.Add(info.ip)
+			down := make(chan struct{})
+			backend := &common.Backend{
+				IP:        info.ip,
+				Unhealthy: down,
+			}
+			backends <- backend
+			mm.Add(backend)
 		},
 		func() {
 			log.Printf("backend %v is down\n", service)
-			mm.Remove(info.ip)
+			backend := <-backends
+			close(backend.Unhealthy)
+			mm.Remove(backend)
 		},
-		100*time.Millisecond, 500*time.Millisecond)
+		100*time.Millisecond, 500*time.Millisecond, quit)
 }
 
 func main() {
@@ -43,6 +57,7 @@ func main() {
 	}
 
 	mm := maglev.New(lookupSizeM)
+	tt := tracking.New(mm.Lookup, 10*time.Second)
 
 	for service, info := range backends {
 		startChecker(mm, service, info)
@@ -108,7 +123,7 @@ func main() {
 			startChecker(mm, words[1], info)
 			backends[words[1]] = info
 		case "lookup":
-			l := lookupPackets(mm, testPackets)
+			l := lookupPackets(tt, testPackets)
 			fmt.Printf("5-tuple to Server mapping:\n")
 			for _, p := range testPackets {
 				fmt.Printf("%v: %v\n", p, l[p])
@@ -119,11 +134,12 @@ func main() {
 	}
 }
 
-func lookupPackets(mm *maglev.Table, packets []string) map[string][]byte {
+func lookupPackets(tt *tracking.Cache, packets []string) map[string][]byte {
 	ret := make(map[string][]byte)
 	for _, p := range packets {
-		if serv, ok := mm.Lookup([]byte(p)); ok {
-			ret[p] = serv
+		key := common.NewFiveTuple([]byte(p)).Hash()
+		if serv, ok := tt.Lookup(key); ok {
+			ret[p] = serv.IP
 		} else {
 			ret[p] = nil
 		}

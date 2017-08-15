@@ -29,9 +29,11 @@ function M.RemoveBackend(service)
    return golib.RemoveBackend(GoString(service, #service))
 end
 
+local ip_addr_array = ffi.typeof("char[16]")
 function M.Lookup(x, x_len)
-   local ret = golib.Lookup(GoSlice(x, x_len, x_len))
-   return ret.r0.data, ret.r0.len, ret.r1
+   local output = GoSlice(ip_addr_array(), 16, 16)
+   local n = golib.Lookup(GoSlice(x, x_len, x_len), output)
+   return output.data, n
 end
 
 return M

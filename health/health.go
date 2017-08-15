@@ -9,8 +9,10 @@ import (
 
 // CheckFun is a wrapper around Check using callback functions.
 func CheckFun(service string, onUp func(), onDown func(),
-	pollDelay time.Duration, timeout time.Duration) chan<- struct{} {
-	updates, quit := Check(service, pollDelay, timeout)
+	pollDelay time.Duration, timeout time.Duration,
+	quit <-chan struct{}) {
+	updates := make(chan bool)
+	Check(service, pollDelay, timeout, updates, quit)
 	go func() {
 		for {
 			up, ok := <-updates
@@ -24,21 +26,22 @@ func CheckFun(service string, onUp func(), onDown func(),
 			}
 		}
 	}()
-	return quit
 }
 
-// Check runs asynchronous health checking.  The first returned channel
+// Check runs asynchronous health checking.  The updates channel
 // receives updates on the health state of the backend.  Write to the
-// second to kill the health checker.
+// quit channel to kill the health checker.
+//
+// Check assumes that the backend is unhealthy initially, and becomes
+// unhealthy (if it was not already so) when it is killed.
 func Check(
 	healthService string,
 	pollDelay time.Duration,
 	timeout time.Duration,
-) (<-chan bool, chan<- struct{}) {
-	updates := make(chan bool)
-	quit := make(chan struct{})
+	updates chan<- bool,
+	quit <-chan struct{},
+) {
 	go check(healthService, pollDelay, timeout, updates, quit)
-	return updates, quit
 }
 
 func check(

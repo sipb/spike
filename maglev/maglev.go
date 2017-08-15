@@ -4,10 +4,13 @@
 package maglev
 
 import (
-	"bytes"
-	"github.com/dchest/siphash"
 	"math/big"
+	"sort"
 	"sync"
+
+	"github.com/dchest/siphash"
+
+	"github.com/sipb/spike/common"
 )
 
 // Prime numbers of varying scale
@@ -19,10 +22,10 @@ const (
 const (
 	offsetKey = uint64(0x35d53c5371bdf886)
 	skipKey   = uint64(0x9e1dbc702649df3a)
-	lookupKey = uint64(0xdd5d635024f19f34)
 )
 
 type permutation struct {
+	weight uint
 	offset uint64
 	skip   uint64
 }
@@ -30,10 +33,8 @@ type permutation struct {
 // Table represents a Maglev hashing table.
 type Table struct {
 	m            uint64 // size of the lookup table
-	backends     [][]byte
-	weights      []uint
-	permutations []permutation
-	lookup       []int
+	permutations map[*common.Backend]permutation
+	lookup       []*common.Backend
 	mutex        sync.RWMutex
 }
 
@@ -44,81 +45,95 @@ func New(m uint64) *Table {
 	}
 	return &Table{
 		m: m,
+		permutations: make(map[*common.Backend]permutation),
 	}
+}
+
+// A Config is a mapping from backends to weights.
+type Config map[*common.Backend]uint
+
+// Reconfig reconfigures the table with the given backend weight
+// configuration.
+func (t *Table) Reconfig(c Config) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	t.permutations = make(map[*common.Backend]permutation)
+	for b, w := range c {
+		if b == nil {
+			panic("nil backend in config")
+		}
+		if w == 0 {
+			continue
+		}
+		t.permutations[b] = permutation{
+			weight: w,
+			offset: siphash.Hash(offsetKey, 0, []byte(b.IP)) % t.m,
+			skip:   siphash.Hash(skipKey, 0, []byte(b.IP))%(t.m-1) + 1,
+		}
+	}
+	t.populate()
 }
 
 // SetWeight sets the weight of the given backend to weight, adding it
 // to the table if necessary.
-func (t *Table) SetWeight(backend []byte, weight uint) {
+func (t *Table) SetWeight(backend *common.Backend, weight uint) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	for i, b := range t.backends {
-		if bytes.Equal(backend, b) {
-			t.weights[i] = weight
-			t.populate()
-			return
-		}
+	if backend == nil {
+		panic("backend is nil")
 	}
 
-	t.backends = append(t.backends, backend)
-	t.weights = append(t.weights, weight)
-	offset := siphash.Hash(offsetKey, 0, []byte(backend)) % t.m
-	skip := siphash.Hash(skipKey, 0, []byte(backend))%(t.m-1) + 1
-	t.permutations = append(t.permutations, permutation{offset, skip})
+	if weight == 0 {
+		delete(t.permutations, backend)
+		t.populate()
+		return
+	}
 
-	t.populate()
-}
-
-// Compact deletes entries from the table with weight 0
-func (t *Table) Compact() {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	var newBackends [][]byte
-	var newWeights []uint
-	var newPermutations []permutation
-
-	for i, w := range t.weights {
-		if w > 0 {
-			newBackends = append(newBackends, t.backends[i])
-			newWeights = append(newWeights, w)
-			newPermutations = append(newPermutations, t.permutations[i])
+	p, ok := t.permutations[backend]
+	if ok {
+		p.weight = weight
+		t.permutations[backend] = p
+	} else {
+		t.permutations[backend] = permutation{
+			weight: weight,
+			offset: siphash.Hash(offsetKey, 0, []byte(backend.IP)) % t.m,
+			skip:   siphash.Hash(skipKey, 0, []byte(backend.IP))%(t.m-1) + 1,
 		}
 	}
-	t.backends = newBackends
-	t.weights = newWeights
-	t.permutations = newPermutations
 	t.populate()
 }
 
 // Add adds a backend to the table with weight 1.
-func (t *Table) Add(backend []byte) {
+func (t *Table) Add(backend *common.Backend) {
 	t.SetWeight(backend, 1)
 }
 
-// Remove removes a backend from the table by setting its weight to 0.
-func (t *Table) Remove(backend []byte) {
-	t.SetWeight(backend, 0)
+// Remove removes a backend from the table.
+func (t *Table) Remove(backend *common.Backend) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	delete(t.permutations, backend)
+	t.populate()
 }
 
-// Lookup looks up an entry in the table and returns the associated
-// backend.
-func (t *Table) Lookup(obj []byte) ([]byte, bool) {
+// Lookup looks up a key in the table and returns the associated
+// backend, or false if there are no backends.
+func (t *Table) Lookup(key uint64) (*common.Backend, bool) {
 	t.mutex.RLock()
 	defer t.mutex.RUnlock()
 
 	if t.lookup == nil {
 		return nil, false
 	}
-	key := siphash.Hash(lookupKey, 0, obj)
-	return t.backends[t.lookup[key%t.m]], true
+	return t.lookup[key%t.m], true
 }
 
 func (t *Table) populate() {
 	nonzero := false
-	for _, w := range t.weights {
-		if w > 0 {
+	for _, p := range t.permutations {
+		if p.weight > 0 {
 			nonzero = true
 			break
 		}
@@ -128,32 +143,43 @@ func (t *Table) populate() {
 		return
 	}
 
-	loc := make([]uint64, len(t.backends))
-	for i, p := range t.permutations {
-		loc[i] = p.offset
+	type bstate struct {
+		backend *common.Backend
+		loc     uint64
+		permutation
 	}
-	entry := make([]int, t.m)
-	for j := range entry {
-		entry[j] = -1
-	}
-	var inserted uint64
 
+	state := make([]bstate, 0, len(t.permutations))
+	for b, p := range t.permutations {
+		state = append(state, bstate{b, p.offset, p})
+	}
+	// sort state to guarantee consistency given identical configurations
+	sort.Slice(state, func(i, j int) bool {
+		return state[i].offset < state[j].offset
+	})
+
+	entry := make([]*common.Backend, t.m)
+	for j := range entry {
+		entry[j] = nil
+	}
+
+	var inserted uint64
 	for {
-		for i, w := range t.weights {
-			for j := uint(0); j < w; j++ {
-				c := loc[i]
-				for entry[c] >= 0 {
-					c += t.permutations[i].skip
+		for i, s := range state {
+			for j := uint(0); j < s.weight; j++ {
+				c := s.loc
+				for entry[c] != nil {
+					c += s.skip
 					if c >= t.m {
 						c -= t.m
 					}
 				}
-				entry[c] = i
-				c += t.permutations[i].skip
+				entry[c] = s.backend
+				c += s.skip
 				if c >= t.m {
 					c -= t.m
 				}
-				loc[i] = c
+				state[i].loc = c
 
 				inserted++
 				if inserted == t.m {
