@@ -33,9 +33,11 @@ func TestAddAndRemove(t *testing.T) {
 	table.SetWeight(&backends[3], 2)
 	table.SetWeight(&backends[3], 3)
 
+	// Remove backend via remove
 	table.Add(&backends[4])
 	table.Remove(&backends[4])
 
+	// Remove backend via setting weight to 0
 	table.Add(&backends[5])
 	table.SetWeight(&backends[5], 0)
 
@@ -50,6 +52,25 @@ func TestAddAndRemove(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		assert.True(t, freq[&backends[i]] > 0, fmt.Sprintf("backends[%d] not hit", i))
 	}
+}
+
+func TestAddPanic(t *testing.T) {
+	table := New(SmallM)
+	assert.Panics(t, func() { table.Add(nil) }, "Add should panic on nil")
+	assert.Panics(t, func() { table.SetWeight(nil, 2) }, "Add should panic on nil")
+}
+func TestEmptyLookupPanic(t *testing.T) {
+	table := New(SmallM)
+	ret, backends := table.Lookup(100)
+	assert.Equal(t, backends, false, "Did not report that there were no backends")
+	assert.Nil(t, ret, "Did not return nil with no backends added")
+
+	backend := common.Backend{IP: []byte{0, 0, 0, 0}}
+	table.Add(&backend)
+	table.SetWeight(&backend, 0)
+	ret, backends = table.Lookup(100)
+	assert.Equal(t, backends, false, "Did not report that there were no backends")
+	assert.Nil(t, ret, "Did not return nil with no backends added")
 }
 
 func TestReconfig(t *testing.T) {
@@ -77,4 +98,20 @@ func TestReconfig(t *testing.T) {
 	for i := 1; i < 4; i++ {
 		assert.True(t, freq[&backends[i]] > 0, fmt.Sprintf("backends[%d] not hit", i))
 	}
+}
+
+func TestReconfigPanic(t *testing.T) {
+	backends := make([]common.Backend, 4)
+	for i := 0; i < len(backends); i++ {
+		backends[i] = common.Backend{IP: []byte{0, 0, 0, byte(i)}}
+	}
+
+	badConfig := make(Config)
+	for i := 0; i < len(backends); i++ {
+		badConfig[&backends[i]] = uint(i)
+	}
+	badConfig[nil] = 1
+
+	table := New(SmallM)
+	assert.Panics(t, func() { table.Reconfig(badConfig) }, "Reconfig should panic for nil entries in config")
 }
