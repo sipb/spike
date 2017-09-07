@@ -115,3 +115,61 @@ func TestReconfigPanic(t *testing.T) {
 	table := New(SmallM)
 	assert.Panics(t, func() { table.Reconfig(badConfig) }, "Reconfig should panic for nil entries in config")
 }
+
+func abs(n int64) int64 {
+	if n < 0 {
+		return -1 * n
+	}
+	return n
+}
+
+func TestDistribution(t *testing.T) {
+	backends := make([]common.Backend, 50)
+	for i := 0; i < len(backends); i++ {
+		backends[i] = common.Backend{IP: []byte{0, 0, 0, byte(i)}}
+	}
+
+	tableSize := int64(1e6 + 3)
+	totalWeight := int64(0)
+	config := make(Config)
+	for i := 0; i < len(backends); i++ {
+		weight := uint(1 + i/5)
+		config[&backends[i]] = weight
+		totalWeight += int64(weight)
+	}
+
+	/* We will check that the lookup table matches the above config distribution
+	 * reasonably well.
+	 * More specifically, we check to see if the number of occurences of each
+	 * backend is within 10% of its expected value.
+	 * An upper bound that the probability that this test fails assuming that
+	 * each entry in the table is assigned randomly is 1e-?.
+	 * How this bound was arrived as is shown below:
+	 *
+	 * By a Chernoff bound, the probability that we see more than 110% of an
+	 * occurence is at most exp( - 0.1 ^ 2 * backendWeight * tableSize / totalWeight / 3).
+	 * Another Chernoff bound tells us the probability we see less than 90% of an
+	 * occurence is at most exp( - 0.1 ^ 2 * backendWeight * tableSize / totalWeight / 2).
+	 * When tableSize = 1e6 + 3 and totalWeight = 275 (and convservatively setting backendWeight = 1 for all backends)
+	 * a union bound across both tails and all backends gives a failure
+	 * proability of at most 5.5e-4.
+	 */
+
+	table := New(uint64(tableSize))
+	table.Reconfig(config)
+
+	freq := make(map[*common.Backend]int64)
+	for i := 0; i < len(table.lookup); i++ {
+		freq[table.lookup[i]] = freq[table.lookup[i]] + 1
+	}
+
+	assert.Equal(t, len(backends), len(freq), fmt.Sprintf("There should be %d backends.", len(backends)))
+	for i := 0; i < len(backends); i++ {
+		weight := int64(1 + i/5)
+		occ := freq[&backends[i]]
+
+		if 10*abs(tableSize*weight-totalWeight*occ) >= totalWeight*occ {
+			t.Errorf("Expected %f occurences of backend %d. Got %d occurences instead. Over tolerance of 10%%.", float64(tableSize*weight)/float64(totalWeight), i, occ)
+		}
+	}
+}
