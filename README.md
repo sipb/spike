@@ -17,7 +17,7 @@ load balancer, [Maglev][0].
 
 * Make sure that your [go workspace](https://golang.org/doc/code.html)
   is set up properly, and that the spike repository is in
-  `$GOPATH/github.com/sipb/spike`.
+  `$GOPATH/src/github.com/sipb/spike`.
 * Clone and build the snabb repository.
 * Run `go get github.com/dchest/siphash`.
 * Run `make`.
@@ -26,6 +26,10 @@ It should now be possible to run the health check demo (`demo.exe`), as
 well as the snabb integration demo (`forward/runspike`).
 
 You can run the tests with `make test`.
+
+# Contributing
+
+Contributing guidelines are [here](CONTRIBUTING.md).
 
 # Copyright
 
