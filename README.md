@@ -11,6 +11,7 @@ load balancer, [Maglev][0].
 * gcc (for the preprocessor)
 * [`siphash`](https://github.com/dchest/siphash)
 * [`snabb`](https://github.com/snabbco/snabb)
+* [`testify`](https://github.com/stretchr/testify)
 
 # Building
 
@@ -23,6 +24,8 @@ load balancer, [Maglev][0].
 
 It should now be possible to run the health check demo (`demo.exe`), as
 well as the snabb integration demo (`forward/runspike`).
+
+You can run the tests with `make test`.
 
 # Copyright
 

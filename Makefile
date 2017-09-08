@@ -1,13 +1,16 @@
-.PHONY: all clean
+.PHONY: all clean test
 
-LIBFILES = common/backend.go common/tuple.go health/health.go maglev/maglev.go tracking/tracking.go
+LIBFILES := $(shell find common health maglev tracking -name '*.go')
 
 all: demo.exe lookup.so lookup_processed.h
 
-demo.exe: demo/main/demo.go $(LIBFILES)
+test:
+	go test github.com/sipb/spike/maglev
+
+demo.exe: $(shell find demo -name '*.go') $(LIBFILES)
 	go build -o $@ github.com/sipb/spike/demo/main
 
-l%okup.so l%okup.h: lookup/main/lookup.go $(LIBFILES)
+l%okup.so l%okup.h: $(shell find lookup -name '*.go') $(LIBFILES)
 	go build -o lookup.so -buildmode=c-shared github.com/sipb/spike/lookup/main
 
 lookup_processed.h: lookup.h
