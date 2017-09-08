@@ -143,7 +143,7 @@ func TestDistribution(t *testing.T) {
 	 * More specifically, we check to see if the number of occurences of each
 	 * backend is within 10% of its expected value.
 	 * An upper bound that the probability that this test fails assuming that
-	 * each entry in the table is assigned randomly is 5.5e-4.
+	 * each entry in the table is assigned randomly is 2.73e-4.
 	 * How this bound was arrived as is shown below:
 	 *
 	 * By a Chernoff bound, the probability that we see more than 110% of an
@@ -152,7 +152,7 @@ func TestDistribution(t *testing.T) {
 	 * occurence is at most exp( - 0.1 ^ 2 * backendWeight * tableSize / totalWeight / 2).
 	 * When tableSize = 1e6 + 3 and totalWeight = 275 (and convservatively setting backendWeight = 1 for all backends)
 	 * a union bound across both tails and all backends gives a failure
-	 * proability of at most 5.5e-4.
+	 * proability of at most 2.73e-4.
 	 */
 
 	table := New(uint64(tableSize))
