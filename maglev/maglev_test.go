@@ -143,7 +143,7 @@ func TestDistribution(t *testing.T) {
 	 * More specifically, we check to see if the number of occurences of each
 	 * backend is within 10% of its expected value.
 	 * An upper bound that the probability that this test fails assuming that
-	 * each entry in the table is assigned randomly is 1e-?.
+	 * each entry in the table is assigned randomly is 5.5e-4.
 	 * How this bound was arrived as is shown below:
 	 *
 	 * By a Chernoff bound, the probability that we see more than 110% of an
