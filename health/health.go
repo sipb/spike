@@ -86,14 +86,20 @@ func check(
 
 // health checks the given health service
 func health(healthService string) bool {
-	resp, _ := http.Get(healthService)
-	bytes, _ := ioutil.ReadAll(resp.Body)
+	const timeout = time.Duration(3 * time.Second)
 
-	resp.Body.Close()
+	client := http.Client{
+		Timeout: timeout,
+	}
 
-	if resp == nil {
+	resp, err := client.Get(healthService)
+	// Check if timeout or HTTP error
+	if resp == nil && err != nil {
 		return false
 	}
+
+	bytes, _ := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 
 	if strings.Contains(string(bytes), "healthy") {
 		return true
