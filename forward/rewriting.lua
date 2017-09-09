@@ -99,12 +99,12 @@ function Rewriting:push()
    local i = assert(self.input.input, "input port not found")
    local o = assert(self.output.output, "output port not found")
    while not L.empty(i) do
-      self:process_packet(i, o)
+      local p = L.receive(i)
+      L.transmit(o, self:process_packet(p))
    end
 end
 
-function Rewriting:process_packet(i, o)
-   local p = L.receive(i)
+function Rewriting:process_packet(p)
    local datagram = Datagram:new(p, nil, {delayed_commit = true})
 
    local eth_header = datagram:parse_match(Ethernet)
@@ -186,7 +186,7 @@ function Rewriting:process_packet(i, o)
 
    datagram:commit()
 
-   link.transmit(o, datagram:packet())
+   return datagram:packet()
 end
 
 return Rewriting
