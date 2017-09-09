@@ -13,3 +13,10 @@ Ensure that neither `gofmt` nor `golint` complains about your code.  For
 non-Go code, make sure it is well-formatted according to your best
 judgment.  Please spell-check your comments.  In addition, try to wrap
 lines of code to 80 characters.
+
+
+You can use [pre-commit](http://pre-commit.com/) to verify that your code
+passes `gofmt`, `golint`, and `go vet`'s muster and a few other checks.
+To install `pre-commit`, follow the instructions there or run
+`pip install pre-commit` or `brew install pre-commit`; then add them to
+your local git config with `pre-commit install`.
