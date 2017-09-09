@@ -9,7 +9,7 @@ ikdc <ikdc@mit.edu> is the current maintainer.
 
 # Style
 
-Ensure that none of `gofmt`, `govet`, `golint` complains about your code.
+Ensure that none of `gofmt`, `go vet`, `golint` complains about your code.
 For non-Go code, make sure it is well-formatted according to your best
 judgment.  Please spell-check your comments.  In addition, try to wrap
 lines of code to 80 characters.
