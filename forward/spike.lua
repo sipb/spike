@@ -4,9 +4,16 @@ local C = require("ffi").C
 local Rewriting = require("rewriting")
 local godefs = require("godefs")
 local IPV4 = require("lib.protocol.ipv4")
+local cmdline = require("cmdline")
+local spike_test = require("spike_test")
 
 local function runmain()
-   if #main.parameters ~= 5 then
+   local params = getparam(main.parameters)
+   if params["t"] then
+      run_spike_tests()
+      return nil
+   end
+   if #params ~= 5 then
       print("Usage: spike src_mac dst_mac ipv4_addr in.pcap out.pcap")
       os.exit(1)
    end
