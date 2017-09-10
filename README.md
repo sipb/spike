@@ -22,8 +22,8 @@ load balancer, [Maglev][0].
 * Run `go get github.com/dchest/siphash`.
 * Run `make`.
 
-It should now be possible to run the health check demo (`demo.exe`), as
-well as the snabb integration demo (`forward/runspike`).
+It should now be possible to run the health check demo (`bin/demo`), as
+well as the snabb integration demo (`bin/runspike`).
 
 You can run the tests with `make test`.
 
