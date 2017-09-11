@@ -1,5 +1,10 @@
 #!/bin/bash
 
+if [ $UID -ne 0 ]; then
+    echo "Please run me as root"
+    exit 1
+fi
+
 if [[ -z "$SNABB" ]]; then
     echo "Please set SNABB to the location of the snabb binary"
     exit 1
