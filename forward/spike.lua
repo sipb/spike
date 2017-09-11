@@ -4,7 +4,6 @@ local C = require("ffi").C
 local Rewriting = require("rewriting")
 local godefs = require("godefs")
 local IPV4 = require("lib.protocol.ipv4")
-local spike_test = require("testing/spike_test")
 
 local function runmain()
    if #main.parameters ~= 5 then

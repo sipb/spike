@@ -1,10 +1,10 @@
 local ffi = require("ffi")
 
-local C = require("ffi").C
+local B = require("apps.basic.basic_apps")
 local P = require("apps.pcap.pcap")
+local C = require("ffi").C
 local IPV4 = require("lib.protocol.ipv4")
 local link = require("core.link")
-local pcap = require("testing/pcap")
 local packet = require("core.packet")
 
 local Rewriting = require("rewriting")
@@ -12,6 +12,7 @@ local godefs = require("godefs")
 
 local packet_synthesis = require("testing/packet_synthesis")
 local SpikeTestInstance = require("testing/spike_test_instance")
+local TestStreamApp = require("testing/test_stream_app")
 
 local function runmain()
    godefs.Init()
@@ -25,10 +26,6 @@ local function runmain()
    local router_mac = "00:ff:ff:ff:ff:ff"
    local spike_addr = "18.0.0.0"
    local router_addr = "18.255.255.255"
-   local test_instance = SpikeTestInstance:new(
-      spike_mac, router_mac, spike_addr, router_addr
-   )
-
    local client_addr = "1.0.0.0"
 
    local test_input_packet = make_ipv4_packet({
@@ -37,17 +34,24 @@ local function runmain()
       src_addr = IPV4:pton(client_addr),
       dst_addr = IPV4:pton(spike_addr)
    })
-   
-   local output_packet = test_instance:process_packet(test_input_packet)
-   -- local output_packet = test_input_packet
-   assert(output_packet)
 
-   local output_file = assert(io.open("test_out.pcap", "w"))
-   pcap.write_file_header(output_file)
-   pcap.write_record_header(output_file, output_packet.length)
-   output_file:write(ffi.string(output_packet.data, output_packet.length))
-   output_file:flush()
-   packet.free(output_packet)
+   local c = config.new()
+   config.app(c, "stream", TestStreamApp, {
+      packets = {
+         [1] = test_input_packet
+      }
+   })
+   config.app(c, "spike", Rewriting, {
+      src_mac = spike_mac,
+      dst_mac = router_mac,
+      ipv4_addr = spike_addr
+   })
+   config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
+   config.link(c, "stream.output -> spike.input")
+   config.link(c, "spike.output -> pcap_writer.input")
+
+   engine.configure(c)
+   engine.main({duration = 1, report = {showlinks = true}})
 end
 
 runmain()
