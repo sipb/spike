@@ -1,0 +1,26 @@
+#!/bin/bash
+
+if [ $UID -ne 0 ]; then
+    echo "Please run me as root"
+    exit 1
+fi
+
+if [[ -z "$SNABB" ]]; then
+    echo "Please set SNABB to the location of the snabb binary"
+    exit 1
+fi
+if [[ -z "$SPIKE" ]]; then
+    echo "Please set SPIKE to the location of the spike repository"
+    exit 1
+fi
+
+export LOOKUP_H="$SPIKE/lookup_processed.h"
+export LOOKUP_SO="$SPIKE/lookup.so"
+
+if [[ -n "$DEBUG" ]]; then
+    COMMAND="gdb --args $SNABB"
+else
+    COMMAND="$SNABB"
+fi
+
+$COMMAND snsh -P "$SPIKE/forward/?.lua" "$SPIKE/forward/testing/spike_test.lua" "$@"

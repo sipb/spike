@@ -15,7 +15,7 @@ local ffi = require("ffi")
 
 local networking_magic_numbers = require("networking_magic_numbers")
 
-function run_spike_tests()
+local function runmain()
    godefs.Init()
    godefs.AddBackend("http://cheesy-fries.mit.edu/health",
                      IPV4:pton("1.3.5.7"), 4)
@@ -66,3 +66,5 @@ function run_spike_tests()
    --    print('['..k..'] = '..tostring(v))
    -- end
 end
+
+runmain()
