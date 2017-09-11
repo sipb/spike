@@ -34,8 +34,8 @@ local function runmain()
    local test_input_packet = make_ipv4_packet({
       src_mac = router_mac,
       dst_mac = spike_mac,
-      src_addr = client_addr,
-      dst_addr = spike_addr
+      src_addr = IPV4:pton(client_addr),
+      dst_addr = IPV4:pton(spike_addr)
    })
    
    local output_packet = test_instance:process_packet(test_input_packet)
