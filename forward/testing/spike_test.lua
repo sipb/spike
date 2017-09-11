@@ -1,19 +1,17 @@
-local Rewriting = require("rewriting")
-local godefs = require("godefs")
-local C = require("ffi").C
-local Datagram = require("lib.protocol.datagram")
-local Ethernet = require("lib.protocol.ethernet")
-local IPV4 = require("lib.protocol.ipv4")
-local TCP = require("lib.protocol.tcp")
+local ffi = require("ffi")
 
+local C = require("ffi").C
 local P = require("apps.pcap.pcap")
+local IPV4 = require("lib.protocol.ipv4")
 local link = require("core.link")
 local pcap = require("testing/pcap")
 local packet = require("core.packet")
 
-local ffi = require("ffi")
+local Rewriting = require("rewriting")
+local godefs = require("godefs")
 
-local networking_magic_numbers = require("networking_magic_numbers")
+local packet_synthesis = require("testing/packet_synthesis")
+local SpikeTestInstance = require("testing/spike_test_instance")
 
 local function runmain()
    godefs.Init()
@@ -23,36 +21,25 @@ local function runmain()
                      IPV4:pton("2.4.6.8"), 4)
    C.usleep(3000000) -- wait for backends to come up
 
-   local client_mac = "00:11:22:33:44:55"
-   local spike_mac, router_mac = "01:23:45:67:89:ab", "01:23:45:67:8a:ab"
-   local spike_addr = "1.2.3.4"
-   local r = Rewriting:new({
-      src_mac = spike_mac,
-      dst_mac = router_mac,
-      ipv4_addr = spike_addr
+   local spike_mac = "00:00:00:00:00:00"
+   local router_mac = "00:ff:ff:ff:ff:ff"
+   local spike_addr = "18.0.0.0"
+   local router_addr = "18.255.255.255"
+   local test_instance = SpikeTestInstance:new(
+      spike_mac, router_mac, spike_addr, router_addr
+   )
+
+   local client_addr = "1.0.0.0"
+
+   local test_input_packet = make_ipv4_packet({
+      src_mac = router_mac,
+      dst_mac = spike_mac,
+      src_addr = client_addr,
+      dst_addr = spike_addr
    })
-   local client_addr = "1.1.1.1"
-   local ttl = 30
-   local datagram = Datagram:new(nil, nil, {delayed_commit = true})
-   local tcp_header = TCP:new({})
-   datagram:push(tcp_header)
-   local ip_header = IPV4:new({
-      src = client_addr,
-      dst = spike_addr,
-      protocol = L4_TCP,
-      ttl = ttl
-   })
-   ip_header:total_length(ip_header:sizeof())
-   datagram:push(ip_header)
-   local eth_header = Ethernet:new({
-      src = client_mac,
-      dst = spike_mac,
-      type = L3_IPV4
-   })
-   datagram:push(eth_header)
-   datagram:commit()
-   local test_input_packet = datagram:packet()
-   local output_packet = r:process_packet(test_input_packet)
+   
+   local output_packet = test_instance:process_packet(test_input_packet)
+   -- local output_packet = test_input_packet
    assert(output_packet)
 
    local output_file = assert(io.open("test_out.pcap", "w"))
@@ -61,10 +48,6 @@ local function runmain()
    output_file:write(ffi.string(output_packet.data, output_packet.length))
    output_file:flush()
    packet.free(output_packet)
-
-   -- for k,v in pairs(p) do
-   --    print('['..k..'] = '..tostring(v))
-   -- end
 end
 
 runmain()
