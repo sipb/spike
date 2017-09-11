@@ -5,7 +5,7 @@ local Rewriting = require("rewriting")
 local godefs = require("godefs")
 local IPV4 = require("lib.protocol.ipv4")
 local cmdline = require("cmdline")
-local spike_test = require("spike_test")
+local spike_test = require("testing/spike_test")
 
 local function runmain()
    local params = getparam(main.parameters)
