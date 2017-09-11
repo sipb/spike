@@ -11,7 +11,6 @@ local Rewriting = require("rewriting")
 local godefs = require("godefs")
 
 local packet_synthesis = require("testing/packet_synthesis")
-local SpikeTestInstance = require("testing/spike_test_instance")
 local TestStreamApp = require("testing/test_stream_app")
 
 local function runmain()
