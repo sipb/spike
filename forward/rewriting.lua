@@ -11,11 +11,7 @@ local rshift = bit.rshift
 
 local godefs = require("godefs")
 
-local L3_IPV4 = 0x0800
-local L3_IPV6 = 0x86DD
-local L4_TCP = 0x06
-local L4_UDP = 0x11
-local L4_GRE = 0x2f
+local networking_magic_numbers = require("networking_magic_numbers")
 
 _G._NAME = "rewriting"  -- Snabb requires this for some reason
 
@@ -177,6 +173,8 @@ function Rewriting:process_packet(i, o)
                                      ttl = self.ttl})
    outer_ip_header:total_length(
       payload_len + gre_header:sizeof() + outer_ip_header:sizeof())
+   -- need to recompute checksum after changing total_length
+   outer_ip_header:checksum()
    datagram:push(outer_ip_header)
 
    local outer_eth_header = Ethernet:new({src = self.src_mac or eth_dst,
