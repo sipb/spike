@@ -5,4 +5,5 @@
 .*.swp
 *.vim
 /runspike.sh
+/runspiketest.sh
 *.pcap
