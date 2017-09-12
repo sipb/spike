@@ -17,7 +17,7 @@ func NewFiveTuple(data []byte) *FiveTuple {
 	return &FiveTuple{data: data}
 }
 
-// Hash returns the consistent five-tuple hash.
+// Hash returns the five-tuple hash.
 func (p *FiveTuple) Hash() uint64 {
 	return siphash.Hash(lookupKey, 0, p.data)
 }
