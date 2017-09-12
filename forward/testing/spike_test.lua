@@ -27,7 +27,14 @@ local function runmain()
    local router_addr = "18.255.255.255"
    local client_addr = "1.0.0.0"
 
-   local test_input_packet = make_ipv4_packet({
+   -- local test_input_packet = make_ipv4_packet({
+   --    src_mac = router_mac,
+   --    dst_mac = spike_mac,
+   --    src_addr = IPV4:pton(client_addr),
+   --    dst_addr = IPV4:pton(spike_addr)
+   -- })
+
+   local packets = make_fragmented_ipv4_packets({
       src_mac = router_mac,
       dst_mac = spike_mac,
       src_addr = IPV4:pton(client_addr),
@@ -36,9 +43,10 @@ local function runmain()
 
    local c = config.new()
    config.app(c, "stream", TestStreamApp, {
-      packets = {
-         [1] = test_input_packet
-      }
+      packets = packets
+      -- packets = {
+      --    [1] = test_input_packet
+      -- }
    })
    config.app(c, "spike", Rewriting, {
       src_mac = spike_mac,
@@ -46,6 +54,7 @@ local function runmain()
       ipv4_addr = spike_addr
    })
    config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
+   --config.link(c, "stream.output -> pcap_writer.input")
    config.link(c, "stream.output -> spike.input")
    config.link(c, "spike.output -> pcap_writer.input")
 
