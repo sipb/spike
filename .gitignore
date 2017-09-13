@@ -1,9 +1,3 @@
 *.exe
 *.so
 /lookup*.h
-
-.*.swp
-*.vim
-/runspike.sh
-/runspiketest.sh
-*.pcap
