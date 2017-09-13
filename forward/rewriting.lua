@@ -177,6 +177,8 @@ function Rewriting:process_packet(i, o)
                                      ttl = self.ttl})
    outer_ip_header:total_length(
       payload_len + gre_header:sizeof() + outer_ip_header:sizeof())
+   -- need to recompute checksum after changing total_length
+   outer_ip_header:checksum()
    datagram:push(outer_ip_header)
 
    local outer_eth_header = Ethernet:new({src = self.src_mac or eth_dst,
