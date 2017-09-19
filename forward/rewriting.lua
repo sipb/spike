@@ -141,18 +141,24 @@ function Rewriting:process_packet(i, o)
          P.free(p)
          return
       end
-      local inner_ip_class = gre_header:upper_layer()
-      local inner_ip_header = gre_header:parse_match(inner_ip_class)
+      -- Snabb thinks that IPv4 cannot be an upper layer for GRE;
+      -- so just supply the upper layer class directly.
+      -- Should we PR to Snabb?
+      -- local inner_ip_class = gre_header:upper_layer()
+      local inner_ip_class = IPV4
+      local inner_ip_header = datagram:parse_match(inner_ip_class)
       local frag_off = inner_ip_header:frag_off()
       local mf = band(inner_ip_header:flags(), IP_MF_FLAG) ~= 0
-      datagram:unparse(4)
       datagram:pop(4)
       local payload, payload_len = datagram:payload()
       local t, t_len = five_tuple(
          l3_type, ip_src, 0, ip_dst, 0
       )
       local t_str = ffi.string(t, t_len)
-      frag_reassembly:process_packet(t_str, frag_off, mf, payload, payload_len)
+      local reassembled_packet = self.ip_frag_reassembly:process_packet(t_str, frag_off, mf, payload, payload_len)
+      if reassembled_packet then
+         -- TODO: send reassembled packet
+      end
       P.free(p)
       return
    elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then

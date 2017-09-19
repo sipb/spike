@@ -56,9 +56,9 @@ local function runmain()
       ipv4_addr = spike_addr
    })
    config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
-   config.link(c, "stream.output -> pcap_writer.input")
-   -- config.link(c, "stream.output -> spike.input")
-   -- config.link(c, "spike.output -> pcap_writer.input")
+   -- config.link(c, "stream.output -> pcap_writer.input")
+   config.link(c, "stream.output -> spike.input")
+   config.link(c, "spike.output -> pcap_writer.input")
 
    engine.configure(c)
    engine.main({duration = 1, report = {showlinks = true}})
