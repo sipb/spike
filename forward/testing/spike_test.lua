@@ -38,7 +38,8 @@ local function runmain()
       src_mac = router_mac,
       dst_mac = spike_mac,
       src_addr = IPV4:pton(client_addr),
-      dst_addr = IPV4:pton(spike_addr)
+      dst_addr = IPV4:pton(spike_addr),
+      add_ip_gre_layer = true
    })
 
    local c = config.new()
@@ -54,7 +55,7 @@ local function runmain()
       ipv4_addr = spike_addr
    })
    config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
-   --config.link(c, "stream.output -> pcap_writer.input")
+   -- config.link(c, "stream.output -> pcap_writer.input")
    config.link(c, "stream.output -> spike.input")
    config.link(c, "spike.output -> pcap_writer.input")
 

@@ -1,3 +1,4 @@
+local GRE = require("lib.protocol.gre")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
@@ -42,8 +43,11 @@ end
 -- payload -- packet payload, defaults to 500 bytes of generated rubbish
 -- payload_length -- length of payload
 -- ip_flags -- flags field for IP header, defaults to 0
--- frag_off -- fragment offset, defaults to 0
--- skip_tcp_header -- don't include a tcp header, defaults to false
+-- frag_off -- fragment offset field, defaults to 0
+-- ttl -- TTL field, defaults to 30
+-- skip_tcp_header (bool) -- don't include a tcp header, defaults to nil
+-- add_ip_gre_layer (bool) -- add a IP-GRE layer to test secondary
+--                            fragmentation processing, defaults to nil
 function make_ipv4_packet(config)
    local payload_length = config.payload_length or 100
    local payload = config.payload or
@@ -63,16 +67,32 @@ function make_ipv4_packet(config)
       datagram:push(tcp_header)
    end
 
+   local ttl = config.ttl or 30
    local ip_header = IPV4:new({
       src = config.src_addr,
       dst = config.dst_addr,
       protocol = L4_TCP,
       flags = config.ip_flags or 0,
-      frag_off = config.frag_off or 0
+      frag_off = config.frag_off or 0,
+      ttl = ttl
    })
    ip_header:total_length(ip_header:sizeof() + tcp_header_size + payload_length)
    ip_header:checksum()
    datagram:push(ip_header)
+
+   if config.add_ip_gre_layer then
+      local gre_header = GRE:new({ protocol = L3_IPV4 })
+      datagram:push(gre_header)
+      local outer_ip_header = IPV4:new({
+         src = config.src_addr, -- Should be another spike's address (which should be equal to the inner IP header's dst address), just reusing router's address for now since it doesn't impact testing.
+         dst = config.dst_addr,
+         protocol = L4_GRE,
+         ttl = ttl
+      })
+      outer_ip_header:total_length(outer_ip_header:sizeof() + gre_header:sizeof() + ip_header:total_length())
+      outer_ip_header:checksum()
+      datagram:push(outer_ip_header)
+   end
 
    local eth_header = Ethernet:new({
       src = config.src_mac,
@@ -95,6 +115,8 @@ end
 -- payload -- packet payload, defaults to 500 bytes of generated rubbish
 -- payload_length -- length of payload
 -- mtu -- MTU of network where packets are fragmented
+-- add_ip_gre_layer (bool) -- add a IP-GRE layer to test secondary
+--                            fragmentation processing, defaults to nil
 function make_fragmented_ipv4_packets(config)
    local payload_length = config.payload_length or 500
    local payload = config.payload or
@@ -136,7 +158,8 @@ function make_fragmented_ipv4_packets(config)
          dst_addr = config.dst_addr,
          ip_flags = ip_flags,
          -- fragment offset field is in multiples of 8
-         frag_off = (i-1) * fragment_len / 8
+         frag_off = (i-1) * fragment_len / 8,
+         add_ip_gre_layer = config.add_ip_gre_layer
       })
    end
    return packets
