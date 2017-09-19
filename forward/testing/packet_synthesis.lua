@@ -32,6 +32,18 @@ local function split_payload(payload, payload_len, fragment_len)
    return fragments
 end
 
+-- Arguments:
+-- src_mac, dst_mac -- source and destination MAC addresses;
+--                     should be the addresses of the router
+--                     (or last switch) and spike respectively
+-- src_addr, dst_addr -- source and destination IP addresses;
+--                     should be the addresses of the router
+--                     and spike respectively
+-- payload -- packet payload, defaults to 500 bytes of generated rubbish
+-- payload_length -- length of payload
+-- ip_flags -- flags field for IP header, defaults to 0
+-- frag_off -- fragment offset, defaults to 0
+-- skip_tcp_header -- don't include a tcp header, defaults to false
 function make_ipv4_packet(config)
    local payload_length = config.payload_length or 100
    local payload = config.payload or
@@ -73,8 +85,17 @@ function make_ipv4_packet(config)
    return datagram:packet()
 end
 
+-- Arguments:
+-- src_mac, dst_mac -- source and destination MAC addresses;
+--                     should be the addresses of the router
+--                     (or last switch) and spike respectively
+-- src_addr, dst_addr -- source and destination IP addresses;
+--                     should be the addresses of the router
+--                     and spike respectively
+-- payload -- packet payload, defaults to 500 bytes of generated rubbish
+-- payload_length -- length of payload
+-- mtu -- MTU of network where packets are fragmented
 function make_fragmented_ipv4_packets(config)
-   
    local payload_length = config.payload_length or 500
    local payload = config.payload or
       make_payload(payload_length)
