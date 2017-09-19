@@ -12,6 +12,7 @@ local rshift = bit.rshift
 local godefs = require("godefs")
 
 local networking_magic_numbers = require("networking_magic_numbers")
+local IPFragReassembly = require("ip_frag_reassembly")
 
 _G._NAME = "rewriting"  -- Snabb requires this for some reason
 
@@ -87,7 +88,8 @@ function Rewriting:new(opts)
        ipv6_addr = ipv6_addr,
        src_mac = opts.src_mac and Ethernet:pton(opts.src_mac),
        dst_mac = Ethernet:pton(opts.dst_mac),
-       ttl = opts.ttl or 30},
+       ttl = opts.ttl or 30,
+       ip_frag_reassembly = IPFragReassembly:new()},
       {__index = Rewriting})
 end
 
@@ -130,7 +132,38 @@ function Rewriting:process_packet(i, o)
    else
       l4_type = ip_header:next_header()
    end
-   if not (l4_type == L4_TCP or l4_type == L4_UDP) then
+   if l4_type == L4_GRE then
+      local gre_class = ip_header:upper_layer()
+      local gre_header = datagram:parse_match(gre_class)
+      -- Checking the recursion control bit seems unnecessary here since
+      -- there is no other reason we would encounter a GRE header...?
+      if gre_header:protocol() ~= L3_IPV4 then
+         P.free(p)
+         return
+      end
+      local inner_ip_class = gre_header:upper_layer()
+      local inner_ip_header = gre_header:parse_match(inner_ip_class)
+      local frag_off = inner_ip_header:frag_off()
+      local mf = band(inner_ip_header:flags(), IP_MF_FLAG) ~= 0
+      datagram:unparse(4)
+      datagram:pop(4)
+      local payload, payload_len = datagram:payload()
+      local t, t_len = five_tuple(
+         l3_type, ip_src, 0, ip_dst, 0
+      )
+      local t_str = ffi.string(t, t_len)
+      frag_reassembly:process_packet(t_str, frag_off, mf, payload, payload_len)
+      P.free(p)
+      return
+   elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then
+      P.free(p)
+      return
+   end
+   local frag_off = ip_header:frag_off()
+   local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
+   if frag_off ~= 0 or mf then
+      local src_port, dst_port = 0, 0
+      -- TODO: Redirect to spike backend pool.
       P.free(p)
       return
    end

@@ -1,4 +1,4 @@
-local IPFragReassembly = {};
+local IPFragReassembly = {}
 
 function IPFragReassembly:new()
    return setmetatable({
@@ -8,8 +8,8 @@ function IPFragReassembly:new()
    })
 end
 
-function IPFragReassembly:process_packet(five_tuple, offset, mf, payload_len, payload)
-   local frag_pkt = frag_pkts[five_tuple]
+function IPFragReassembly:process_packet(five_tuple_str, offset, mf, payload, payload_len)
+   local frag_pkt = frag_pkts[five_tuple_str]
    if frag_pkt then
       if frag_pkt.frags[offset] then
          return
@@ -19,6 +19,7 @@ function IPFragReassembly:process_packet(five_tuple, offset, mf, payload_len, pa
             len = payload_len
          }
          frag_pkt.curr_frags_length = frag_pkt.curr_frags_length + payload_len
+      end
    else
       frag_pkt = {
          curr_frags_length = payload_len,
@@ -30,12 +31,14 @@ function IPFragReassembly:process_packet(five_tuple, offset, mf, payload_len, pa
          },
          timestamp = os.time()
       }
-      frag_pkts[five_tuple] = frag_pkt
+      frag_pkts[five_tuple_str] = frag_pkt
    end
-   if ~mf then
+   if not mf then
       frag_pkt.total_length = offset + payload_len
    end
    if frag_pkt.total_length and frag_pkt.curr_frags_length == frag_pkt.total_length then
       -- Reassemble packet
    end
 end
+
+return IPFragReassembly
