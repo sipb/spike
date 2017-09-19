@@ -96,7 +96,7 @@ function make_ipv4_packet(config)
 
    local eth_header = Ethernet:new({
       src = config.src_mac,
-      dst = config.dst_addr,
+      dst = config.dst_mac,
       type = L3_IPV4
    })
    datagram:push(eth_header)

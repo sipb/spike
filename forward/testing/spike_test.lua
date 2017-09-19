@@ -3,6 +3,7 @@ local ffi = require("ffi")
 local B = require("apps.basic.basic_apps")
 local P = require("apps.pcap.pcap")
 local C = require("ffi").C
+local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
 local link = require("core.link")
 local packet = require("core.packet")
@@ -35,8 +36,8 @@ local function runmain()
    -- })
 
    local packets = make_fragmented_ipv4_packets({
-      src_mac = router_mac,
-      dst_mac = spike_mac,
+      src_mac = Ethernet:pton(router_mac),
+      dst_mac = Ethernet:pton(spike_mac),
       src_addr = IPV4:pton(client_addr),
       dst_addr = IPV4:pton(spike_addr),
       add_ip_gre_layer = true
@@ -55,9 +56,9 @@ local function runmain()
       ipv4_addr = spike_addr
    })
    config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
-   -- config.link(c, "stream.output -> pcap_writer.input")
-   config.link(c, "stream.output -> spike.input")
-   config.link(c, "spike.output -> pcap_writer.input")
+   config.link(c, "stream.output -> pcap_writer.input")
+   -- config.link(c, "stream.output -> spike.input")
+   -- config.link(c, "spike.output -> pcap_writer.input")
 
    engine.configure(c)
    engine.main({duration = 1, report = {showlinks = true}})
