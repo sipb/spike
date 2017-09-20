@@ -135,6 +135,7 @@ function Rewriting:process_packet(i, o)
    else
       l4_type = ip_header:next_header()
    end
+   local ip_total_length = ip_header:total_length()
    -- Check for IP fragmentation
    local frag_off = ip_header:frag_off()
    local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
@@ -186,9 +187,9 @@ function Rewriting:process_packet(i, o)
          protocol = inner_ip_header:protocol(),
          ttl = inner_ip_header:ttl()
       })
-      local _, clen = datagram:data()
       ip_header:total_length(ip_header:sizeof() + reassembled_pkt_len)
       ip_header:checksum()
+      ip_total_length = ip_header:total_length()
       datagram:push(ip_header)
       datagram:parse_match(IPV4)
    elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then
@@ -221,8 +222,6 @@ function Rewriting:process_packet(i, o)
    -- unparse L4 and L3
    datagram:unparse(2)
 
-   local _, payload_len = datagram:payload()
-
    local gre_header = GRE:new({protocol = l3_type})
    datagram:push(gre_header)
 
@@ -231,7 +230,7 @@ function Rewriting:process_packet(i, o)
                                      protocol = L4_GRE,
                                      ttl = self.ttl})
    outer_ip_header:total_length(
-      payload_len + gre_header:sizeof() + outer_ip_header:sizeof())
+      ip_total_length + gre_header:sizeof() + outer_ip_header:sizeof())
    -- need to recompute checksum after changing total_length
    outer_ip_header:checksum()
    datagram:push(outer_ip_header)
