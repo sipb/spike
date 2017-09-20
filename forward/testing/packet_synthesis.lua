@@ -10,12 +10,12 @@ local networking_magic_numbers = require("networking_magic_numbers")
 local function make_payload(len)
    local buf = ffi.new('char[?]', len)
    for i=0,len-1 do
-      buf[i] = i % 256
+      buf[i] = (i + 128) % 256
    end
    return ffi.string(buf, len)
 end
 
--- Returns an array of payload fragments
+-- Returns an array of payload fragments.
 local function split_payload(payload, payload_len, fragment_len)
    -- add fragment_payload_len-1 to handle case when payload_len is divisible by fragment_payload_len
    -- want to compute (payload_len + fragment_len - 1) // fragment_payload_len but lua5.1 has no integer division
@@ -152,14 +152,14 @@ function make_fragmented_ipv4_packets(config)
       end
       packets[i] = make_ipv4_packet({
          payload = fragments[i],
-         payload_length = fragment_len,
+         payload_length = string.len(fragments[i]),
          skip_tcp_header = true,
          src_mac = config.src_mac,
          dst_mac = config.dst_mac,
          src_addr = config.src_addr,
          dst_addr = config.dst_addr,
          ip_flags = ip_flags,
-         -- fragment offset field is in multiples of 8
+         -- fragment offset field is units of 8-byte blocks
          frag_off = (i-1) * fragment_len / 8,
          add_ip_gre_layer = config.add_ip_gre_layer
       })
