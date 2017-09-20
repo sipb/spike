@@ -11,11 +11,7 @@ local rshift = bit.rshift
 
 local godefs = require("godefs")
 
-local L3_IPV4 = 0x0800
-local L3_IPV6 = 0x86DD
-local L4_TCP = 0x06
-local L4_UDP = 0x11
-local L4_GRE = 0x2f
+local networking_magic_numbers = require("networking_magic_numbers")
 
 _G._NAME = "rewriting"  -- Snabb requires this for some reason
 
