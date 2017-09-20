@@ -4,6 +4,7 @@ local GRE = require("lib.protocol.gre")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
+local TCP = require("lib.protocol.tcp")
 local bit = require("bit")
 local ffi = require("ffi")
 local band = bit.band
@@ -118,6 +119,8 @@ function Rewriting:process_packet(i, o)
    end
    -- Maybe consider moving packet parsing after ethernet into go?
    local ip_class = eth_header:upper_layer()
+   -- decapsulate from ethernet
+   datagram:pop(1)
 
    local ip_header = datagram:parse_match(ip_class)
    if ip_header == nil then
@@ -132,7 +135,18 @@ function Rewriting:process_packet(i, o)
    else
       l4_type = ip_header:next_header()
    end
+   -- Check for IP fragmentation
+   local frag_off = ip_header:frag_off()
+   local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
+   if frag_off ~= 0 or mf then
+      local src_port, dst_port = 0, 0
+      -- TODO: Redirect to spike backend pool.
+      P.free(p)
+      return
+   end
    if l4_type == L4_GRE then
+      -- Start of IP fragment extraction and reassembly
+      -- Might want to extract this block into a separate function
       local gre_class = ip_header:upper_layer()
       local gre_header = datagram:parse_match(gre_class)
       -- Checking the recursion control bit seems unnecessary here since
@@ -147,29 +161,37 @@ function Rewriting:process_packet(i, o)
       -- local inner_ip_class = gre_header:upper_layer()
       local inner_ip_class = IPV4
       local inner_ip_header = datagram:parse_match(inner_ip_class)
+
       local frag_off = inner_ip_header:frag_off()
       local mf = band(inner_ip_header:flags(), IP_MF_FLAG) ~= 0
-      datagram:pop(4)
+
+      datagram:pop(3)
       local payload, payload_len = datagram:payload()
+      -- Set ports to zero to get three-tuple
       local t, t_len = five_tuple(
          l3_type, ip_src, 0, ip_dst, 0
       )
       local t_str = ffi.string(t, t_len)
-      local reassembled_packet = self.ip_frag_reassembly:process_packet(t_str, frag_off, mf, payload, payload_len)
-      if reassembled_packet then
-         -- TODO: send reassembled packet
+      local reassembled_pkt, reassembled_pkt_len = self.ip_frag_reassembly:process_packet(t_str, frag_off, mf, payload, payload_len)
+      if not reassembled_pkt then
+         P.free(p)
+         return
       end
-      P.free(p)
-      return
+      datagram = Datagram:new(nil, nil, {delayed_commit = true})
+      datagram:payload(reassembled_pkt, reassembled_pkt_len)
+      
+      ip_header = IPV4:new({
+         src = inner_ip_header:src(),
+         dst = inner_ip_header:dst(),
+         protocol = inner_ip_header:protocol(),
+         ttl = inner_ip_header:ttl()
+      })
+      local _, clen = datagram:data()
+      ip_header:total_length(ip_header:sizeof() + reassembled_pkt_len)
+      ip_header:checksum()
+      datagram:push(ip_header)
+      datagram:parse_match(IPV4)
    elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then
-      P.free(p)
-      return
-   end
-   local frag_off = ip_header:frag_off()
-   local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
-   if frag_off ~= 0 or mf then
-      local src_port, dst_port = 0, 0
-      -- TODO: Redirect to spike backend pool.
       P.free(p)
       return
    end
@@ -198,8 +220,6 @@ function Rewriting:process_packet(i, o)
 
    -- unparse L4 and L3
    datagram:unparse(2)
-   -- decapsulate from ethernet
-   datagram:pop(1)
 
    local _, payload_len = datagram:payload()
 
