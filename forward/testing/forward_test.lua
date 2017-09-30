@@ -22,43 +22,55 @@ local function runmain()
                      IPV4:pton("2.4.6.8"), 4)
    C.usleep(3000000) -- wait for backends to come up
 
-   local spike_mac = "00:00:00:00:00:00"
-   local router_mac = "00:ff:ff:ff:ff:ff"
-   local spike_addr = "18.0.0.0"
-   local router_addr = "18.255.255.255"
+   local spike_mac = "38:c3:0d:1d:34:df"
+   local router_mac = "ce:d2:85:61:1e:01"
+   local backend_vip_addr = "18.0.0.0"
+   local router_addr = "18.100.100.100"
    local client_addr = "1.0.0.0"
+   local spike_internal_addr = "192.168.1.0"
+   local other_spike_internal_addr = "192.168.1.1"
 
-   -- local test_input_packet = make_ipv4_packet({
-   --    src_mac = router_mac,
-   --    dst_mac = spike_mac,
-   --    src_addr = IPV4:pton(client_addr),
-   --    dst_addr = IPV4:pton(spike_addr)
-   -- })
+   local test_fragmentation = true
+   local debug_bypass_spike = false
 
-   local packets = make_fragmented_ipv4_packets({
-      src_mac = Ethernet:pton(router_mac),
-      dst_mac = Ethernet:pton(spike_mac),
-      src_addr = IPV4:pton(client_addr),
-      dst_addr = IPV4:pton(spike_addr),
-      add_ip_gre_layer = true
-   })
+   local packets
+   if test_fragmentation then
+      packets = make_fragmented_ipv4_packets({
+         src_mac = Ethernet:pton(router_mac),
+         dst_mac = Ethernet:pton(spike_mac),
+         src_addr = IPV4:pton(client_addr),
+         dst_addr = IPV4:pton(backend_vip_addr),
+         outer_src_addr = IPV4:pton(other_spike_internal_addr),
+         outer_dst_addr = IPV4:pton(spike_internal_addr),
+         add_ip_gre_layer = true
+      })
+   else
+      packets = {
+         [1] = make_ipv4_packet({
+            src_mac = Ethernet:pton(router_mac),
+            dst_mac = Ethernet:pton(spike_mac),
+            src_addr = IPV4:pton(client_addr),
+            dst_addr = IPV4:pton(backend_vip_addr)
+         })
+      }
+   end
 
    local c = config.new()
    config.app(c, "stream", TestStreamApp, {
       packets = packets
-      -- packets = {
-      --    [1] = test_input_packet
-      -- }
    })
    config.app(c, "spike", Rewriting, {
       src_mac = spike_mac,
       dst_mac = router_mac,
-      ipv4_addr = spike_addr
+      ipv4_addr = spike_internal_addr
    })
    config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
-   -- config.link(c, "stream.output -> pcap_writer.input")
-   config.link(c, "stream.output -> spike.input")
-   config.link(c, "spike.output -> pcap_writer.input")
+   if debug_bypass_spike then
+      config.link(c, "stream.output -> pcap_writer.input")
+   else
+      config.link(c, "stream.output -> spike.input")
+      config.link(c, "spike.output -> pcap_writer.input")
+   end
 
    engine.configure(c)
    engine.main({duration = 1, report = {showlinks = true}})

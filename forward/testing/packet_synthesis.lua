@@ -5,7 +5,7 @@ local IPV4 = require("lib.protocol.ipv4")
 local TCP = require("lib.protocol.tcp")
 local ffi = require("ffi")
 
-local networking_magic_numbers = require("networking_magic_numbers")
+require("networking_magic_numbers")
 
 local function make_payload(len)
    local buf = ffi.new('char[?]', len)
@@ -34,21 +34,24 @@ local function split_payload(payload, payload_len, fragment_len)
 end
 
 -- Arguments:
--- src_mac, dst_mac (binary) -- source and destination MAC addresses;
---                              should be the addresses of the router
---                              (or last switch) and spike respectively
--- src_addr, dst_addr (binary) -- source and destination IP addresses;
---                                should be the addresses of the router
---                                and spike respectively
+-- src_mac, dst_mac (binary) -- Source and destination MAC addresses;
+--    should be the addresses of the router (or last switch) and spike
+--    respectively.
+-- src_addr, dst_addr (binary) -- Source and destination IP addresses;
+--    should be the client address and backend virtual IP for normal use.
+-- outer_src_addr, outer_dst_addr (binary) -- Source and destination
+--    IP addresses for inner IP header, if added. Should be the internal
+--    IP addresses of two spikes for IP fragment redirection.
 -- payload (binary) -- packet payload, defaults to 100 bytes of
---                     generated rubbish
--- payload_length (int, default 100) -- length of payload
--- ip_flags (int, default 0) -- flags field for IP header
--- frag_off (int, default 0) -- fragment offset field
--- ttl (int, default 30) -- TTL field
--- skip_tcp_header (bool, default nil) -- don't include a tcp header
--- add_ip_gre_layer (bool, default nil) -- add a IP-GRE layer to test
---                                       secondary fragmentation processing
+--    generated rubbish.
+-- payload_length (int, default 100) -- Length of payload.
+-- ip_flags (int, default 0) -- Flags field for IP header.
+-- frag_off (int, default 0) -- Fragment offset field.
+-- ttl (int, default 30) -- TTL field.
+-- skip_tcp_header (bool, default nil) -- Don't include a tcp header.
+-- add_ip_gre_layer (bool, default nil) -- Add a IP-GRE layer to test
+--    secondary fragmentation processing. If this is true, outer_src_addr
+--    and outer_dst_addr must be defined.
 function make_ipv4_packet(config)
    local payload_length = config.payload_length or 100
    local payload = config.payload or
@@ -85,8 +88,8 @@ function make_ipv4_packet(config)
       local gre_header = GRE:new({ protocol = L3_IPV4 })
       datagram:push(gre_header)
       local outer_ip_header = IPV4:new({
-         src = config.src_addr, -- Should be another spike's address (which should be equal to the inner IP header's dst address), just reusing router's address for now since it doesn't impact testing.
-         dst = config.dst_addr,
+         src = config.outer_src_addr,
+         dst = config.outer_dst_addr,
          protocol = L4_GRE,
          ttl = ttl
       })
@@ -107,18 +110,21 @@ function make_ipv4_packet(config)
 end
 
 -- Arguments:
--- src_mac, dst_mac (binary) -- source and destination MAC addresses;
---                              should be the addresses of the router
---                              (or last switch) and spike respectively
--- src_addr, dst_addr (binary) -- source and destination IP addresses;
---                                should be the addresses of the router
---                                and spike respectively
--- payload (binary) -- packet payload, defaults to 500 bytes of
---                     generated rubbish
--- payload_length (int, default 500) -- length of payload
--- mtu (int, default 100) -- MTU of network where packets are fragmented
--- add_ip_gre_layer (bool, default nil) -- add a IP-GRE layer to test
---                                       secondary fragmentation processing
+-- src_mac, dst_mac (binary) -- Source and destination MAC addresses;
+--    should be the addresses of the router (or last switch) and spike
+--    respectively.
+-- src_addr, dst_addr (binary) -- Source and destination IP addresses;
+--    should be the client address and backend virtual IP for normal use.
+-- outer_src_addr, outer_dst_addr (binary) -- Source and destination
+--    IP addresses for inner IP header, if added. Should be the internal
+--    IP addresses of two spikes for IP fragment redirection.
+-- payload (binary) -- packet payload, defaults to 100 bytes of
+--    generated rubbish.
+-- payload_length (int, default 100) -- Length of payload.
+-- mtu (int, default 100) -- MTU of network where packets are fragmented.
+-- add_ip_gre_layer (bool, default nil) -- Add a IP-GRE layer to test
+--    secondary fragmentation processing. If this is true, outer_src_addr
+--    and outer_dst_addr must be defined.
 function make_fragmented_ipv4_packets(config)
    local payload_length = config.payload_length or 500
    local payload = config.payload or
