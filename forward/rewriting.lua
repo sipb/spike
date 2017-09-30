@@ -77,6 +77,7 @@ end
 -- Parses a datagram to compute the packet's five tuple and the backend
 -- pool to forward to packet to. Due to IP fragmentation, the packet to
 -- be forwarded may be different from the packet received.
+-- See reassembly.lua for an explanation of IP fragmentation handling.
 -- Expected input datagram structure:
 -- IPv4 fragment --
 --    Ethernet (popped) | IPv4 (parsed) | payload

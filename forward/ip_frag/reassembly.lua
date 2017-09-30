@@ -1,3 +1,48 @@
+-- IP fragmentation reassembly
+-- The IPv4 protocol allows for packet payloads to be fragmented,
+-- i.e. split across multiple IPv4 packets. This payload includes
+-- the L4 protocol header, which spike needs in order to decide
+-- which backend to redirect the packet to. This requires spike
+-- to reassemble fragmented packets.
+-- (See the Google Maglev paper, Section 4.3 for details)
+--
+-- Life of an IP fragment
+-- ======================
+-- The fragment arrives in
+-- Rewriting:handle_fragmentation_and_get_forwarding_params
+-- with the following structure:
+-- Ethernet (popped) | IPv4 (parsed) | payload
+--
+-- Spike recognizes that it is a fragment because the fragment offset
+-- or MF field is non-zero (RFC791), and redirects the fragment into
+-- the spike backend pool, using the 3-tuple in place of the 5-tuple
+-- (Maglev paper).
+--
+-- The fragment then arrives in
+-- Rewriting:handle_fragmentation_and_get_forwarding_params
+-- of the new spike, now with the following structure:
+-- Ethernet (popped) | IPv4 (parsed) | GRE | IPv4 | payload
+--
+-- Spike recognizes that the fragment has been forwarded once due to
+-- the presence of the GRE header and sends the packet to
+-- IPFragReassembly:process_datagram, which extracts the payload and
+-- other fragment data and sends it to IPFragReassembly:process_frag.
+--
+-- Here, fragments are grouped according to source and destination
+-- IP address, inner protocol ID and identification field (RFC791).
+--
+-- When a fragment set is complete, IPFragReassembly:process_datagram
+-- creates a new datagram with the reassembled payload and a synthetic
+-- IP header, with the following structure:
+-- IPv4 | TCP/UDP | payload (nothing parsed)
+--
+-- It is then treated like an unfragmented packet, eventually exiting
+-- spike with the following structure:
+-- Ethernet | IPv4 | GRE | IPv4 | TCP/UDP | payload
+--
+-- TODO: Limit the size of fragment table, or make it fixed-size somehow.
+--    (as recommended in Maglev paper)
+
 local Datagram = require("lib.protocol.datagram")
 local IPV4 = require("lib.protocol.ipv4")
 local GRE = require("lib.protocol.gre")
@@ -64,7 +109,10 @@ function IPFragReassembly:process_frag(id, offset, mf, payload, payload_len)
             }
          },
          timestamp = os.time()
-         -- TODO: Implement packet expiry (with a linked list or queue)
+         -- TODO: Implement packet expiry (with a linked list or queue).
+         --    RFC1122 recommends a value between 60 and 120 seconds.
+         --    On timeout, an ICMP Time Exceeded must be sent to the
+         --    client (also RFC1122).
       }
       self.frag_sets[id] = frag_set
    end
