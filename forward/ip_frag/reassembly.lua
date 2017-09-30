@@ -1,0 +1,168 @@
+local Datagram = require("lib.protocol.datagram")
+local IPV4 = require("lib.protocol.ipv4")
+local GRE = require("lib.protocol.gre")
+local ffi = require("ffi")
+local band = bit.band
+local rshift = bit.rshift
+
+require("networking_magic_numbers")
+
+local function create_fragment_set_id(src, dst, next_prot, ident)
+   local id = ffi.new("char[12]")
+   local id_len = 12
+   id[0] = band(next_prot, 0xff)
+   id[1] = band(rshift(next_prot, 8), 0xff)
+   id[2] = band(ident, 0xff)
+   id[3] = band(rshift(ident, 8), 0xff)
+   ffi.copy(id + 4, src, 4)
+   ffi.copy(id + 8, dst, 4)
+   return id, id_len
+end
+
+local IPFragReassembly = {}
+
+function IPFragReassembly:new()
+   return setmetatable({
+      frag_sets = {}
+   }, {
+      __index = IPFragReassembly
+   })
+end
+
+-- Adds a fragment to the fragment buffer. If all the fragments of a
+-- set have been received, returns the reassembled data in binary
+-- format.
+-- Arguments:
+-- id (string): Identifier for the fragment set containing the IP
+--    protocol, source and destination IP addresses, and the fragment
+--    identification field.
+-- offset (int): IP fragment offset.
+-- mf (bool): IP fragment mf (more fragments) flag.
+-- payload (binary): IP fragment payload.
+-- payload_len (int): Length of payload.
+function IPFragReassembly:process_frag(id, offset, mf, payload, payload_len)
+   local frag_set = self.frag_sets[id]
+   if frag_set then
+      if frag_set.frags[offset] then
+         -- Received same fragment twice
+         return
+      else
+         frag_set.frags[offset] = {
+            payload = payload,
+            len = payload_len
+         }
+         frag_set.curr_frags_length = frag_set.curr_frags_length + payload_len
+      end
+   else
+      frag_set = {
+         curr_frags_length = payload_len,
+         frags = {
+            -- currently using offset instead of header id field as key
+            [offset] = {
+               payload = payload,
+               len = payload_len
+            }
+         },
+         timestamp = os.time()
+         -- TODO: Implement packet expiry (with a linked list or queue)
+      }
+      self.frag_sets[id] = frag_set
+   end
+   if not mf then
+      -- fragment offset field is in units of 8-byte blocks
+      frag_set.total_length = offset * 8 + payload_len
+   end
+   if frag_set.total_length and frag_set.curr_frags_length == frag_set.total_length then
+      local reassembled = ffi.new('char[?]', frag_set.total_length)
+      -- currently not checking for holes
+      -- can do so by starting with the offset = 0 fragment
+      -- then adding frag.len to get the offset of the next fragment
+      -- instead of just looping through fragments in table order
+      local success = true
+      for offset, frag in pairs(frag_set.frags) do
+         if offset + frag.len >= frag_set.total_length then
+            success = false
+            break
+         end
+         -- fragment offset field is in units of 8-byte blocks
+         ffi.copy(reassembled + offset * 8, frag.payload, frag.len)
+      end
+      self.frag_sets[id] = nil
+      if success then
+         return reassembled, frag_set.total_length
+      end
+   end
+end
+
+-- Processes a datagram containing a redirected IPv4 fragment and
+-- adds the fragment to the reassembly table, returning a datagram
+-- containing the reassembled data when a fragment set is complete.
+-- Expected input datagram structure:
+--    Ethernet (popped) | IPv4 (parsed) | GRE | IPv4 | payload
+-- Expected output datagram structure:
+--    Ethernet (popped/missing) | IPv4 (parsed) | TCP/UDP | payload
+-- Arguments:
+-- datagram (datagram): Datagram containing IPv4 fragment. Ethernet
+--    should be popped and outer IPv4 should be parsed.
+-- Returns:
+-- datagram (datagram): If a packet set is complete, this will be
+--    the datagram containing the reassembled packet. Otherwise,
+--    this will be nil.
+function IPFragReassembly:process_datagram(datagram)
+   -- This function should only be called if the topmost header of
+   -- the datagram is a GRE header
+   local gre_header = datagram:parse_match(GRE)
+   if gre_header == nil then
+      return
+   end
+
+   -- Checking the recursion control bit seems unnecessary here since
+   -- there is no other reason we would encounter a GRE header...?
+   if gre_header:protocol() ~= L3_IPV4 then
+      return
+   end
+
+   -- Snabb thinks that IPv4 cannot be an upper layer for GRE;
+   -- so just supply the upper layer class directly.
+   -- Should we PR to Snabb?
+   -- local inner_ip_class = gre_header:upper_layer()
+   local inner_ip_class = IPV4
+   local inner_ip_header = datagram:parse_match(inner_ip_class)
+   if inner_ip_header == nil then
+      return
+   end
+
+   -- Use these four fields to identify fragment sets as per RFC791
+   local src = inner_ip_header:src()
+   local dst = inner_ip_header:dst()
+   local next_prot = inner_ip_header:protocol()
+   local ident = inner_ip_header:id()
+
+   local frag_off = inner_ip_header:frag_off()
+   local mf = band(inner_ip_header:flags(), IP_MF_FLAG) ~= 0
+
+   local payload, payload_len = datagram:payload()
+   local id, id_len = create_fragment_set_id(src, dst, next_prot, ident)
+   local id_str = ffi.string(id, id_len)
+   local reassembled_pkt, reassembled_pkt_len = self:process_frag(id_str, frag_off, mf, payload, payload_len)
+   if not reassembled_pkt then
+      return
+   end
+
+   local datagram = Datagram:new(nil, nil, {delayed_commit = true})
+   datagram:payload(reassembled_pkt, reassembled_pkt_len)
+   
+   local ip_header = IPV4:new({
+      src = src,
+      dst = dst,
+      protocol = next_prot,
+      ttl = inner_ip_header:ttl()
+   })
+   local ip_total_length = ip_header:sizeof() + reassembled_pkt_len
+   ip_header:total_length(ip_total_length)
+   ip_header:checksum()
+   datagram:push(ip_header)
+   return datagram, ip_header
+end
+
+return IPFragReassembly

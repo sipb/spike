@@ -1,9 +1,9 @@
 local P = require("core.packet")
 local L = require("core.link")
-local GRE = require("lib.protocol.gre")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
+local GRE = require("lib.protocol.gre")
 local TCP = require("lib.protocol.tcp")
 local bit = require("bit")
 local ffi = require("ffi")
@@ -12,39 +12,11 @@ local rshift = bit.rshift
 
 local godefs = require("godefs")
 
-local networking_magic_numbers = require("networking_magic_numbers")
-local IPFragReassembly = require("ip_frag_reassembly")
+require("networking_magic_numbers")
+require("five_tuple")
+local IPFragReassembly = require("ip_frag/reassembly")
 
 _G._NAME = "rewriting"  -- Snabb requires this for some reason
-
-local ipv4_five_tuple = ffi.typeof("char[14]")
-local ipv4_five_tuple_len = 14
-local ipv6_five_tuple = ffi.typeof("char[38]")
-local ipv6_five_tuple_len = 38
-
-
--- Create a five-tuple
-local function five_tuple(ip_protocol, src, src_port, dst, dst_port)
-   local t, t_len
-   if ip_protocol == L3_IPV4 then
-      t = ipv4_five_tuple()
-      t_len = ipv4_five_tuple_len
-      ffi.copy(t + 6, src, 4)
-      ffi.copy(t + 10, dst, 4)
-   else
-      t = ipv6_five_tuple()
-      t_len = ipv6_five_tuple_len
-      ffi.copy(t + 6, src, 16)
-      ffi.copy(t + 22, dst, 16)
-   end
-   t[0] = band(ip_protocol, 0xff)
-   t[1] = band(rshift(ip_protocol, 8), 0xff)
-   t[2] = band(src_port, 0xff)
-   t[3] = band(rshift(src_port, 8), 0xff)
-   t[4] = band(dst_port, 0xff)
-   t[5] = band(rshift(dst_port, 8), 0xff)
-   return t, t_len
-end
 
 -- Return the backend associated with a five-tuple
 local function get_backend(five_tuple, five_tuple_len)
@@ -102,6 +74,83 @@ function Rewriting:push()
    end
 end
 
+-- Parses a datagram to compute the packet's five tuple and the backend
+-- pool to forward to packet to. Due to IP fragmentation, the packet to
+-- be forwarded may be different from the packet received.
+-- Expected input datagram structure:
+-- IPv4 fragment --
+--    Ethernet (popped) | IPv4 (parsed) | payload
+-- Redirected IPv4 fragment --
+--    Ethernet (popped) | IPv4 (parsed) | GRE | IPv4 | payload
+-- Full packet --
+--    Ethernet (popped) | IPv4/IPv6 (parsed) | TCP/UDP | payload
+-- Expected output datagram structure:
+--    Ethernet (popped/missing) | IPv4 | TCP/UDP (parsed) | payload
+-- Arguments:
+-- datagram (datagram) -- Datagram to process. Should have Ethernet
+--    header popped and IP header parsed.
+-- ip_header (header) -- Parsed IP header of datagram.
+-- ip_type (int) -- IP header type, can be L3_IPV4 or L3_IPV6
+-- Returns:
+-- forward_datagram (bool) -- Indicates whether there is a datagram to
+--    forward.
+-- t (binary) -- Five tuple of datagram.
+-- t_len (int) -- Length of t.
+-- backend_pool (int) -- Backend pool to forward the packet to.
+-- new_datagram (datagram) -- Datagram to forward. Should have Ethernet
+--    header popped or missing, and TCP/UDP headers parsed.
+-- new_datagram_len (int) -- Length of new_datagram.
+function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_header, ip_type)
+   local ip_src = ip_header:src()
+   local ip_dst = ip_header:dst()
+   local l4_type
+   if ip_type == L3_IPV4 then
+      l4_type = ip_header:protocol()
+   else
+      l4_type = ip_header:next_header()
+   end
+   local ip_total_length = ip_header:total_length()
+   local prot_class = ip_header:upper_layer()
+
+   local frag_off = ip_header:frag_off()
+   local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
+   if frag_off ~= 0 or mf then
+      -- Packet is an IPv4 fragment; redirect to another spike
+      -- Set ports to zero to get three-tuple
+      local t3, t3_len = five_tuple(ip_type, ip_src, 0, ip_dst, 0)
+      -- TODO: Return spike backend pool
+      return true, t3, t3_len, nil, datagram, ip_total_length
+   end
+
+   if l4_type == L4_GRE then
+      -- Packet is a redirected IPv4 fragment
+      local new_datagram, new_ip_header = self.ip_frag_reassembly:process_datagram(datagram)
+      if not new_datagram then
+         return false, nil, nil, nil, nil, nil
+      end
+      datagram = new_datagram
+      datagram:parse_match(IPV4)
+      ip_src = new_ip_header:src()
+      ip_dst = new_ip_header:dst()
+      ip_total_length = new_ip_header:total_length()
+      prot_class = new_ip_header:upper_layer()
+   elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then
+      return false, nil, nil, nil, nil, nil
+   end
+
+   local prot_header = datagram:parse_match(prot_class)
+   if prot_header == nil then
+      return false, nil, nil, nil, nil
+   end
+   local src_port = prot_header:src_port()
+   local dst_port = prot_header:dst_port()
+
+   local t, t_len = five_tuple(ip_type,
+                               ip_src, src_port, ip_dst, dst_port)
+   -- TODO: Use IP destination to determine backend pool.
+   return true, t, t_len, nil, datagram, ip_total_length
+end
+
 function Rewriting:process_packet(i, o)
    local p = L.receive(i)
    local datagram = Datagram:new(p, nil, {delayed_commit = true})
@@ -127,87 +176,21 @@ function Rewriting:process_packet(i, o)
       P.free(p)
       return
    end
-   local ip_src = ip_header:src()
-   local ip_dst = ip_header:dst()
-   local l4_type
-   if l3_type == L3_IPV4 then
-      l4_type = ip_header:protocol()
-   else
-      l4_type = ip_header:next_header()
-   end
-   local ip_total_length = ip_header:total_length()
-   -- Check for IP fragmentation
-   local frag_off = ip_header:frag_off()
-   local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
-   if frag_off ~= 0 or mf then
-      local src_port, dst_port = 0, 0
-      -- TODO: Redirect to spike backend pool.
+   
+   local forward_datagram, t, t_len,
+      backend_pool, new_datagram, ip_total_length =
+         self:handle_fragmentation_and_get_forwarding_params(
+            datagram, ip_header, l3_type
+         )
+   if not forward_datagram then
       P.free(p)
       return
    end
-   if l4_type == L4_GRE then
-      -- Start of IP fragment extraction and reassembly
-      -- Might want to extract this block into a separate function
-      local gre_class = ip_header:upper_layer()
-      local gre_header = datagram:parse_match(gre_class)
-      -- Checking the recursion control bit seems unnecessary here since
-      -- there is no other reason we would encounter a GRE header...?
-      if gre_header:protocol() ~= L3_IPV4 then
-         P.free(p)
-         return
-      end
-      -- Snabb thinks that IPv4 cannot be an upper layer for GRE;
-      -- so just supply the upper layer class directly.
-      -- Should we PR to Snabb?
-      -- local inner_ip_class = gre_header:upper_layer()
-      local inner_ip_class = IPV4
-      local inner_ip_header = datagram:parse_match(inner_ip_class)
-
-      local frag_off = inner_ip_header:frag_off()
-      local mf = band(inner_ip_header:flags(), IP_MF_FLAG) ~= 0
-
-      datagram:pop(3)
-      local payload, payload_len = datagram:payload()
-      -- Set ports to zero to get three-tuple
-      local t, t_len = five_tuple(
-         l3_type, ip_src, 0, ip_dst, 0
-      )
-      local t_str = ffi.string(t, t_len)
-      local reassembled_pkt, reassembled_pkt_len = self.ip_frag_reassembly:process_packet(t_str, frag_off, mf, payload, payload_len)
-      if not reassembled_pkt then
-         P.free(p)
-         return
-      end
-      datagram = Datagram:new(nil, nil, {delayed_commit = true})
-      datagram:payload(reassembled_pkt, reassembled_pkt_len)
-      
-      ip_header = IPV4:new({
-         src = inner_ip_header:src(),
-         dst = inner_ip_header:dst(),
-         protocol = inner_ip_header:protocol(),
-         ttl = inner_ip_header:ttl()
-      })
-      ip_header:total_length(ip_header:sizeof() + reassembled_pkt_len)
-      ip_header:checksum()
-      ip_total_length = ip_header:total_length()
-      datagram:push(ip_header)
-      datagram:parse_match(IPV4)
-   elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then
+   if datagram ~= new_datagram then
       P.free(p)
-      return
+      datagram = new_datagram
    end
-   local prot_class = ip_header:upper_layer()
 
-   local prot_header = datagram:parse_match(prot_class)
-   if prot_header == nil then
-      P.free(p)
-      return
-   end
-   local src_port = prot_header:src_port()
-   local dst_port = prot_header:dst_port()
-
-   local t, t_len = five_tuple(l3_type,
-                               ip_src, src_port, ip_dst, dst_port)
    local backend, backend_len = get_backend(t, t_len)
    if backend_len == 0 then
       P.free(p)
