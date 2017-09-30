@@ -46,43 +46,6 @@ local function split_payload(payload, payload_len, fragment_len)
    return fragments, num_fragments
 end
 
--- Arguments:
--- src_mac, dst_mac (binary) -- Source and destination MAC addresses;
---    should be the addresses of the router (or last switch) and spike
---    respectively.
--- src_addr, dst_addr (binary) -- Source and destination IP addresses;
---    should be the client address and backend virtual IP for normal use.
--- outer_src_addr, outer_dst_addr (binary) -- Source and destination
---    IP addresses for inner IP header, if added. Should be the internal
---    IP addresses of two spikes for IP fragment redirection.
--- payload (binary) -- packet payload, defaults to 100 bytes of
---    generated rubbish.
--- payload_length (int, default 100) -- Length of payload.
--- ip_flags (int, default 0) -- Flags field for IP header.
--- frag_off (int, default 0) -- Fragment offset field.
--- ttl (int, default 30) -- TTL field.
--- skip_tcp_header (bool, default nil) -- Don't include a tcp header.
--- add_ip_gre_layer (bool, default nil) -- Add a IP-GRE layer to test
---    secondary fragmentation processing. If this is true, outer_src_addr
---    and outer_dst_addr must be defined.
-
--- Arguments:
--- src_mac, dst_mac (binary) -- Source and destination MAC addresses;
---    should be the addresses of the router (or last switch) and spike
---    respectively.
--- src_addr, dst_addr (binary) -- Source and destination IP addresses;
---    should be the client address and backend virtual IP for normal use.
--- outer_src_addr, outer_dst_addr (binary) -- Source and destination
---    IP addresses for inner IP header, if added. Should be the internal
---    IP addresses of two spikes for IP fragment redirection.
--- payload (binary) -- packet payload, defaults to 100 bytes of
---    generated rubbish.
--- payload_length (int, default 100) -- Length of payload.
--- mtu (int, default 100) -- MTU of network where packets are fragmented.
--- add_ip_gre_layer (bool, default nil) -- Add a IP-GRE layer to test
---    secondary fragmentation processing. If this is true, outer_src_addr
---    and outer_dst_addr must be defined.
-
 local PacketSynthesisContext = {}
 
 local function parse_mac(mac)
