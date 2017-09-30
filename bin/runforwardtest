@@ -23,4 +23,4 @@ else
     COMMAND="$SNABB"
 fi
 
-$COMMAND snsh -P "$SPIKE/forward/?.lua" "$SPIKE/forward/testing/spike_test.lua" "$@"
+$COMMAND snsh -P "$SPIKE/forward/?.lua" "$SPIKE/forward/testing/forward_test.lua" "$@"
