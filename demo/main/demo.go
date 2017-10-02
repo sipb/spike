@@ -43,7 +43,7 @@ func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 			close(backend.Unhealthy)
 			mm.Remove(backend)
 		},
-		100*time.Millisecond, 500*time.Millisecond, quit)
+		100*time.Millisecond, 400*time.Millisecond, 500*time.Millisecond, quit)
 }
 
 func main() {
