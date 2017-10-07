@@ -5,6 +5,7 @@ local P = require("apps.pcap.pcap")
 local C = require("ffi").C
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
+local IPV6 = require("lib.protocol.ipv6")
 local link = require("core.link")
 local packet = require("core.packet")
 
