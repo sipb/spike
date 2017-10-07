@@ -67,7 +67,7 @@ function Rewriting:new(opts)
    if opts.ipv4_addr and opts.ipv6_addr then
       error("cannot specify both ipv4 and ipv6")
    end
-   if not opts.ipv4_addr and not opts.ipv4_addr then
+   if not opts.ipv4_addr and not opts.ipv6_addr then
       error("need to specify either ipv4addr or ipv6addr")
    end
    if opts.ipv4_addr then
