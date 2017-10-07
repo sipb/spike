@@ -86,6 +86,8 @@ end
 -- payload (binary): IP fragment payload.
 -- payload_len (int): Length of payload.
 function IPFragReassembly:process_frag(id, offset, mf, payload, payload_len)
+   -- fragment offset field is in units of 8-byte blocks
+   offset = offset * 8
    local frag_set = self.frag_sets[id]
    if frag_set then
       if frag_set.frags[offset] then
@@ -118,23 +120,20 @@ function IPFragReassembly:process_frag(id, offset, mf, payload, payload_len)
    -- TODO: Ensure packet fragment sizes and total packet data storage
    --    does not get too large
    if not mf then
-      -- fragment offset field is in units of 8-byte blocks
-      frag_set.total_length = offset * 8 + payload_len
+      frag_set.total_length = offset + payload_len
    end
    if frag_set.total_length and frag_set.curr_frags_length == frag_set.total_length then
-      local reassembled = ffi.new('char[?]', frag_set.total_length)
-      -- TODO: currently not checking for holes
-      -- can do so by starting with the offset = 0 fragment
-      -- then adding frag.len to get the offset of the next fragment
-      -- instead of just looping through fragments in table order
       local success = true
-      for offset, frag in pairs(frag_set.frags) do
-         if offset + frag.len >= frag_set.total_length then
+      local reassembled = ffi.new('char[?]', frag_set.total_length)
+      local curr_offset = 0
+      while curr_offset ~= frag_set.total_length do
+         local frag = frag_set.frags[curr_offset]
+         if not frag or curr_offset + frag.len > frag_set.total_length then
             success = false
             break
          end
-         -- fragment offset field is in units of 8-byte blocks
-         ffi.copy(reassembled + offset * 8, frag.payload, frag.len)
+         ffi.copy(reassembled + curr_offset, frag.payload, frag.len)
+         curr_offset = curr_offset + frag.len
       end
       self.frag_sets[id] = nil
       if success then
