@@ -14,7 +14,13 @@ local godefs = require("godefs")
 local PacketSynthesisContext = require("testing/packet_synthesis")
 local TestStreamApp = require("testing/test_stream_app")
 
+require("networking_magic_numbers")
+
 local function runmain()
+   local test_fragmentation = false
+   local test_ipv6 = true
+   local debug_bypass_spike = false
+
    godefs.Init()
    godefs.AddBackend("http://cheesy-fries.mit.edu/health",
                      IPV4:pton("1.3.5.7"), 4)
@@ -29,21 +35,28 @@ local function runmain()
       client_addr = "1.0.0.0",
       spike_internal_addr = "192.168.1.0",
       other_spike_internal_addr = "192.168.1.1",
+      backend_vip_ipv6_addr = "0:0:0:0:0:ffff:1200:0",
+      client_ipv6_addr = "0:0:0:0:0:ffff:100:0",
+      spike_internal_ipv6_addr = "0:0:0:0:0:ffff:c0a8:100",
+      other_spike_internal_ipv6_addr = "0:0:0:0:0:ffff:c0a8:101",
       backend_vip_port = 80,
       client_port = 12345
    }
 
-   local synthesis = PacketSynthesisContext:new(network_config)
-
-   local test_fragmentation = true
-   local debug_bypass_spike = false
+   local synthesis = PacketSynthesisContext:new(network_config, test_ipv6)
 
    local packets
    if test_fragmentation then
       packets = synthesis:make_redirected_ipv4_fragment_packets()
+   elseif test_ipv6 then
+      packets = {
+         [1] = synthesis:make_ip_packet({
+            l3_prot = L3_IPV6
+         })
+      }
    else
       packets = {
-         [1] = synthesis:make_ipv4_packet()
+         [1] = synthesis:make_ip_packet()
       }
    end
 

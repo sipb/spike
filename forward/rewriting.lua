@@ -104,13 +104,14 @@ end
 function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_header, ip_type)
    local ip_src = ip_header:src()
    local ip_dst = ip_header:dst()
-   local l4_type
+   local l4_type, ip_total_length
    if ip_type == L3_IPV4 then
       l4_type = ip_header:protocol()
+      ip_total_length = ip_header:total_length()
    else
       l4_type = ip_header:next_header()
+      ip_total_length = ip_header:payload_length() + ip_header:sizeof()
    end
-   local ip_total_length = ip_header:total_length()
    local prot_class = ip_header:upper_layer()
 
    -- TODO: handle IPv6 fragments

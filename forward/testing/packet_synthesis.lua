@@ -3,6 +3,7 @@ local GRE = require("lib.protocol.gre")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
+local IPV6 = require("lib.protocol.ipv6")
 local TCP = require("lib.protocol.tcp")
 local ffi = require("ffi")
 
@@ -74,18 +75,25 @@ end
 -- ttl (int) -- TTL for IP headers.
 -- mtu (int) -- MTU of network.
 function PacketSynthesisContext:new(network_config)
-   local use_ipv6 = network_config.use_ipv6
    local parsed_network_config = clone_table(network_config, {
       spike_mac = parse_mac(network_config.spike_mac),
       router_mac = parse_mac(network_config.router_mac),
       backend_vip_addr =
-         parse_addr(network_config.backend_vip_addr, use_ipv6),
+         parse_addr(network_config.backend_vip_addr, false),
       client_addr =
-         parse_addr(network_config.client_addr, use_ipv6),
+         parse_addr(network_config.client_addr, false),
       spike_internal_addr =
-         parse_addr(network_config.spike_internal_addr, use_ipv6),
+         parse_addr(network_config.spike_internal_addr, false),
       other_spike_internal_addr =
-         parse_addr(network_config.other_spike_internal_addr, use_ipv6)
+         parse_addr(network_config.other_spike_internal_addr, false),
+      backend_vip_ipv6_addr =
+         parse_addr(network_config.backend_vip_ipv6_addr, true),
+      client_ipv6_addr =
+         parse_addr(network_config.client_ipv6_addr, true),
+      spike_internal_ipv6_addr =
+         parse_addr(network_config.spike_internal_ipv6_addr, true),
+      other_spike_internal_ipv6_addr =
+         parse_addr(network_config.other_spike_internal_ipv6_addr, true)
    })
    return setmetatable({
       network_config = parsed_network_config,
@@ -123,19 +131,32 @@ end
 --    including L4 header.
 function PacketSynthesisContext:make_ip_header(config)
    config = config or {}
-   local ip_header = IPV4:new({
-      src = config.src_addr or self.network_config.client_addr,
-      dst = config.dst_addr or self.network_config.backend_vip_addr,
-      protocol = config.inner_prot or config.l4_prot or L4_TCP,
-      flags = config.ip_flags or 0,
-      frag_off = config.frag_off or 0,
-      ttl = config.ttl or self.network_config.ttl or 30
-   })
-   local ip_header_size = ip_header:sizeof()
-   ip_header:total_length(ip_header_size +
-      (config.ip_payload_len or self.datagram_len)
-   )
-   ip_header:checksum()
+   local l3_prot = config.l3_prot or self.network_config.l3_prot or L3_IPV4
+   local payload_length = config.ip_payload_len or self.datagram_len
+   local ip_header
+   if l3_prot == L3_IPV6 then
+      ip_header = IPV6:new({
+         src = config.src_addr or self.network_config.client_ipv6_addr,
+         dst = config.dst_addr or self.network_config.backend_vip_ipv6_addr,
+         next_header = config.inner_prot or config.l4_prot or L4_TCP,
+         hop_limit = config.ttl or self.network_config.ttl or 30
+      })
+      ip_header:payload_length(payload_length)
+   elseif l3_prot == L3_IPV4 then
+      ip_header = IPV4:new({
+         src = config.src_addr or self.network_config.client_addr,
+         dst = config.dst_addr or self.network_config.backend_vip_addr,
+         protocol = config.inner_prot or config.l4_prot or L4_TCP,
+         flags = config.ip_flags or 0,
+         frag_off = config.frag_off or 0,
+         ttl = config.ttl or self.network_config.ttl or 30
+      })
+      local ip_header_size = ip_header:sizeof()
+      ip_header:total_length(ip_header_size + payload_length)
+      ip_header:checksum()
+   else
+      assert(false, 'invalid l3_prot')
+   end
    return ip_header
 end
 
@@ -232,7 +253,7 @@ function PacketSynthesisContext:get_packet()
    return self.datagram:packet()
 end
 
-function PacketSynthesisContext:make_ipv4_packet(config)
+function PacketSynthesisContext:make_ip_packet(config)
    config = config or {}
    self:new_packet()
    self:add_payload(config)
