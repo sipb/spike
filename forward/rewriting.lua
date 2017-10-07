@@ -86,7 +86,7 @@ end
 -- Full packet --
 --    Ethernet (popped) | IPv4/IPv6 (parsed) | TCP/UDP | payload
 -- Expected output datagram structure:
---    Ethernet (popped/missing) | IPv4 | TCP/UDP (parsed) | payload
+--    Ethernet (popped/missing) | IPv4 (parsed) | TCP/UDP | payload
 -- Arguments:
 -- datagram (datagram) -- Datagram to process. Should have Ethernet
 --    header popped and IP header parsed.
@@ -99,7 +99,7 @@ end
 -- t_len (int) -- Length of t.
 -- backend_pool (int) -- Backend pool to forward the packet to.
 -- new_datagram (datagram) -- Datagram to forward. Should have Ethernet
---    header popped or missing, and TCP/UDP headers parsed.
+--    header popped or missing, and IP header parsed.
 -- new_datagram_len (int) -- Length of new_datagram.
 function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_header, ip_type)
    local ip_src = ip_header:src()
@@ -113,21 +113,24 @@ function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_h
    local ip_total_length = ip_header:total_length()
    local prot_class = ip_header:upper_layer()
 
-   local frag_off = ip_header:frag_off()
-   local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
-   if frag_off ~= 0 or mf then
-      -- Packet is an IPv4 fragment; redirect to another spike
-      -- Set ports to zero to get three-tuple
-      local t3, t3_len = five_tuple(ip_type, ip_src, 0, ip_dst, 0)
-      -- TODO: Return spike backend pool
-      return true, t3, t3_len, nil, datagram, ip_total_length
+   -- TODO: handle IPv6 fragments
+   if ip_type == L3_IPV4 then
+      local frag_off = ip_header:frag_off()
+      local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
+      if frag_off ~= 0 or mf then
+         -- Packet is an IPv4 fragment; redirect to another spike
+         -- Set ports to zero to get three-tuple
+         local t3, t3_len = five_tuple(ip_type, ip_src, 0, ip_dst, 0)
+         -- TODO: Return spike backend pool
+         return true, t3, t3_len, nil, datagram, ip_total_length
+      end
    end
 
    if l4_type == L4_GRE then
       -- Packet is a redirected IPv4 fragment
       local new_datagram, new_ip_header = self.ip_frag_reassembly:process_datagram(datagram)
       if not new_datagram then
-         return false, nil, nil, nil, nil, nil
+         return false
       end
       datagram = new_datagram
       datagram:parse_match(IPV4)
@@ -136,12 +139,12 @@ function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_h
       ip_total_length = new_ip_header:total_length()
       prot_class = new_ip_header:upper_layer()
    elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then
-      return false, nil, nil, nil, nil, nil
+      return false
    end
 
    local prot_header = datagram:parse_match(prot_class)
    if prot_header == nil then
-      return false, nil, nil, nil, nil
+      return false
    end
    local src_port = prot_header:src_port()
    local dst_port = prot_header:dst_port()
@@ -149,6 +152,9 @@ function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_h
    local t, t_len = five_tuple(ip_type,
                                ip_src, src_port, ip_dst, dst_port)
    -- TODO: Use IP destination to determine backend pool.
+
+   -- unparse L4
+   datagram:unparse(1)
    return true, t, t_len, nil, datagram, ip_total_length
 end
 

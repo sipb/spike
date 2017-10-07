@@ -102,7 +102,6 @@ function IPFragReassembly:process_frag(id, offset, mf, payload, payload_len)
       frag_set = {
          curr_frags_length = payload_len,
          frags = {
-            -- currently using offset instead of header id field as key
             [offset] = {
                payload = payload,
                len = payload_len
@@ -116,13 +115,15 @@ function IPFragReassembly:process_frag(id, offset, mf, payload, payload_len)
       }
       self.frag_sets[id] = frag_set
    end
+   -- TODO: Ensure packet fragment sizes and total packet data storage
+   --    does not get too large
    if not mf then
       -- fragment offset field is in units of 8-byte blocks
       frag_set.total_length = offset * 8 + payload_len
    end
    if frag_set.total_length and frag_set.curr_frags_length == frag_set.total_length then
       local reassembled = ffi.new('char[?]', frag_set.total_length)
-      -- currently not checking for holes
+      -- TODO: currently not checking for holes
       -- can do so by starting with the offset = 0 fragment
       -- then adding frag.len to get the offset of the next fragment
       -- instead of just looping through fragments in table order
@@ -140,6 +141,7 @@ function IPFragReassembly:process_frag(id, offset, mf, payload, payload_len)
          return reassembled, frag_set.total_length
       end
    end
+   return
 end
 
 -- Processes a datagram containing a redirected IPv4 fragment and
@@ -172,7 +174,8 @@ function IPFragReassembly:process_datagram(datagram)
 
    -- Snabb thinks that IPv4 cannot be an upper layer for GRE;
    -- so just supply the upper layer class directly.
-   -- Should we PR to Snabb?
+   -- PR submitted to Snabb, waiting for merge.
+   -- TODO: handle IPv4 fragments
    -- local inner_ip_class = gre_header:upper_layer()
    local inner_ip_class = IPV4
    local inner_ip_header = datagram:parse_match(inner_ip_class)
@@ -199,7 +202,7 @@ function IPFragReassembly:process_datagram(datagram)
 
    local datagram = Datagram:new(nil, nil, {delayed_commit = true})
    datagram:payload(reassembled_pkt, reassembled_pkt_len)
-   
+
    local ip_header = IPV4:new({
       src = src,
       dst = dst,
