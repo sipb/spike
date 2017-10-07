@@ -184,7 +184,7 @@ function Rewriting:process_packet(i, o)
       P.free(p)
       return
    end
-   
+
    local forward_datagram, t, t_len,
       backend_pool, new_datagram, ip_total_length =
          self:handle_fragmentation_and_get_forwarding_params(
@@ -213,37 +213,34 @@ function Rewriting:process_packet(i, o)
    datagram:push(gre_header)
 
 
+   local outer_ip_header, outer_l3_type
    if backend_len == 4 then -- IPv4
-      local outer_ip_header = IPV4:new({src = self.ipv4_addr,
+      outer_l3_type = L3_IPV4
+      outer_ip_header = IPV4:new({src = self.ipv4_addr,
                                         dst = backend,
                                         protocol = L4_GRE,
                                         ttl = self.ttl})
       outer_ip_header:total_length(
-            ip_total_length + gre_header:sizeof() + outer_ip_header:sizeof())
+         ip_total_length + gre_header:sizeof() + outer_ip_header:sizeof())
       -- need to recompute checksum after changing total_length
       outer_ip_header:checksum()
-      datagram:push(outer_ip_header)
-
-      local outer_eth_header = Ethernet:new({src = self.src_mac or eth_dst,
-                                             dst = self.dst_mac,
-                                             type = L3_IPV4})
-      datagram:push(outer_eth_header)
    elseif backend_len == 16 then -- IPv6
-      local outer_ip_header = IPV6:new({src= self.ipv6_addr,
+      outer_l3_type = L3_IPV6
+      outer_ip_header = IPV6:new({src= self.ipv6_addr,
                                         dst = backend,
                                         next_header = L4_GRE,
                                         hop_limit = self.ttl})
       outer_ip_header:payload_length(ip_total_length + gre_header:sizeof())
-      
-      datagram:push(outer_ip_header)
-
-      local outer_eth_header = Ethernet:new({src = self.src_mac or eth_dst,
-                                             dst = self.dst_mac,
-                                             type = L3_IPV6})
-      datagram:push(outer_eth_header)
    else
       error("backend length must be 4 (for IPv4) or 16 (for IPv6)")
    end
+
+   datagram:push(outer_ip_header)
+
+   local outer_eth_header = Ethernet:new({src = self.src_mac or eth_dst,
+                                          dst = self.dst_mac,
+                                          type = outer_l3_type})
+   datagram:push(outer_eth_header)
 
    datagram:commit()
 
