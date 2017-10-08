@@ -13,13 +13,16 @@ local godefs = require("godefs")
 
 local PacketSynthesisContext = require("testing/packet_synthesis")
 local TestStreamApp = require("testing/test_stream_app")
+local TestCollectApp = require("testing/test_collect_app")
 
 require("networking_magic_numbers")
 
 local function runmain()
    local test_fragmentation = false
-   local test_ipv6 = true
-   local debug_bypass_spike = true
+   local test_ipv6 = false
+   local debug_bypass_spike = false
+   local input_from_pcap = false
+   local output_to_pcap = true
 
    godefs.Init()
    godefs.AddBackend("http://cheesy-fries.mit.edu/health",
@@ -61,20 +64,38 @@ local function runmain()
    end
 
    local c = config.new()
-   config.app(c, "stream", TestStreamApp, {
-      packets = packets
-   })
-   config.app(c, "spike", Rewriting, {
+   if not input_from_pcap then
+      config.app(c, "stream", TestStreamApp, {
+         packets = packets
+      })
+   end
+   local rewriting_config = {
       src_mac = network_config.spike_mac,
       dst_mac = network_config.router_mac,
       ipv4_addr = network_config.spike_internal_addr
-   })
+   }
+   config.app(c, "spike", Rewriting, rewriting_config)
    config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
-   if debug_bypass_spike then
-      config.link(c, "stream.output -> pcap_writer.input")
+   config.app(c, "collect", TestCollectApp)
+
+   local input_app, output_app
+   if output_to_pcap then
+      output_app = "pcap_writer"
    else
-      config.link(c, "stream.output -> spike.input")
-      config.link(c, "spike.output -> pcap_writer.input")
+      output_app = "collect"
+   end
+   if input_from_pcap then
+      config.app(c, "pcap_reader", P.PcapReader, "input.pcap")
+      input_app = "pcap_reader"
+   else
+      input_app = "stream"
+   end
+
+   if debug_bypass_spike then
+      config.link(c, input_app..".output -> "..output_app..".input")
+   else
+      config.link(c, input_app..".output -> spike.input")
+      config.link(c, "spike.output -> "..output_app..".input")
    end
 
    engine.configure(c)
