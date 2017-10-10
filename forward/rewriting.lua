@@ -1,9 +1,10 @@
 local P = require("core.packet")
 local L = require("core.link")
-local GRE = require("lib.protocol.gre")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
+local GRE = require("lib.protocol.gre")
+local TCP = require("lib.protocol.tcp")
 local bit = require("bit")
 local ffi = require("ffi")
 local band = bit.band
@@ -11,42 +12,11 @@ local rshift = bit.rshift
 
 local godefs = require("godefs")
 
-local L3_IPV4 = 0x0800
-local L3_IPV6 = 0x86DD
-local L4_TCP = 0x06
-local L4_UDP = 0x11
-local L4_GRE = 0x2f
+require("networking_magic_numbers")
+require("five_tuple")
+local IPFragReassembly = require("ip_frag/reassembly")
 
 _G._NAME = "rewriting"  -- Snabb requires this for some reason
-
-local ipv4_five_tuple = ffi.typeof("char[14]")
-local ipv4_five_tuple_len = 14
-local ipv6_five_tuple = ffi.typeof("char[38]")
-local ipv6_five_tuple_len = 38
-
-
--- Create a five-tuple
-local function five_tuple(ip_protocol, src, src_port, dst, dst_port)
-   local t, t_len
-   if ip_protocol == L3_IPV4 then
-      t = ipv4_five_tuple()
-      t_len = ipv4_five_tuple_len
-      ffi.copy(t + 6, src, 4)
-      ffi.copy(t + 10, dst, 4)
-   else
-      t = ipv6_five_tuple()
-      t_len = ipv6_five_tuple_len
-      ffi.copy(t + 6, src, 16)
-      ffi.copy(t + 22, dst, 16)
-   end
-   t[0] = band(ip_protocol, 0xff)
-   t[1] = band(rshift(ip_protocol, 8), 0xff)
-   t[2] = band(src_port, 0xff)
-   t[3] = band(rshift(src_port, 8), 0xff)
-   t[4] = band(dst_port, 0xff)
-   t[5] = band(rshift(dst_port, 8), 0xff)
-   return t, t_len
-end
 
 -- Return the backend associated with a five-tuple
 local function get_backend(five_tuple, five_tuple_len)
@@ -91,7 +61,8 @@ function Rewriting:new(opts)
        ipv6_addr = ipv6_addr,
        src_mac = opts.src_mac and Ethernet:pton(opts.src_mac),
        dst_mac = Ethernet:pton(opts.dst_mac),
-       ttl = opts.ttl or 30},
+       ttl = opts.ttl or 30,
+       ip_frag_reassembly = IPFragReassembly:new()},
       {__index = Rewriting})
 end
 
@@ -101,6 +72,91 @@ function Rewriting:push()
    while not L.empty(i) do
       self:process_packet(i, o)
    end
+end
+
+-- Parses a datagram to compute the packet's five tuple and the backend
+-- pool to forward to packet to. Due to IP fragmentation, the packet to
+-- be forwarded may be different from the packet received.
+-- See reassembly.lua for an explanation of IP fragmentation handling.
+-- Expected input datagram structure:
+-- IPv4 fragment --
+--    Ethernet (popped) | IPv4 (parsed) | payload
+-- Redirected IPv4 fragment --
+--    Ethernet (popped) | IPv4 (parsed) | GRE | IPv4 | payload
+-- Full packet --
+--    Ethernet (popped) | IPv4/IPv6 (parsed) | TCP/UDP | payload
+-- Expected output datagram structure:
+--    Ethernet (popped/missing) | IPv4 (parsed) | TCP/UDP | payload
+-- Arguments:
+-- datagram (datagram) -- Datagram to process. Should have Ethernet
+--    header popped and IP header parsed.
+-- ip_header (header) -- Parsed IP header of datagram.
+-- ip_type (int) -- IP header type, can be L3_IPV4 or L3_IPV6
+-- Returns:
+-- forward_datagram (bool) -- Indicates whether there is a datagram to
+--    forward.
+-- t (binary) -- Five tuple of datagram.
+-- t_len (int) -- Length of t.
+-- backend_pool (int) -- Backend pool to forward the packet to.
+-- new_datagram (datagram) -- Datagram to forward. Should have Ethernet
+--    header popped or missing, and IP header parsed.
+-- new_datagram_len (int) -- Length of new_datagram.
+function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_header, ip_type)
+   local ip_src = ip_header:src()
+   local ip_dst = ip_header:dst()
+   local l4_type, ip_total_length
+   if ip_type == L3_IPV4 then
+      l4_type = ip_header:protocol()
+      ip_total_length = ip_header:total_length()
+   else
+      l4_type = ip_header:next_header()
+      ip_total_length = ip_header:payload_length() + ip_header:sizeof()
+   end
+   local prot_class = ip_header:upper_layer()
+
+   -- TODO: handle IPv6 fragments
+   if ip_type == L3_IPV4 then
+      local frag_off = ip_header:frag_off()
+      local mf = band(ip_header:flags(), IP_MF_FLAG) ~= 0
+      if frag_off ~= 0 or mf then
+         -- Packet is an IPv4 fragment; redirect to another spike
+         -- Set ports to zero to get three-tuple
+         local t3, t3_len = five_tuple(ip_type, ip_src, 0, ip_dst, 0)
+         -- TODO: Return spike backend pool
+         return true, t3, t3_len, nil, datagram, ip_total_length
+      end
+   end
+
+   if l4_type == L4_GRE then
+      -- Packet is a redirected IPv4 fragment
+      local new_datagram, new_ip_header = self.ip_frag_reassembly:process_datagram(datagram)
+      if not new_datagram then
+         return false
+      end
+      datagram = new_datagram
+      datagram:parse_match(IPV4)
+      ip_src = new_ip_header:src()
+      ip_dst = new_ip_header:dst()
+      ip_total_length = new_ip_header:total_length()
+      prot_class = new_ip_header:upper_layer()
+   elseif not (l4_type == L4_TCP or l4_type == L4_UDP) then
+      return false
+   end
+
+   local prot_header = datagram:parse_match(prot_class)
+   if prot_header == nil then
+      return false
+   end
+   local src_port = prot_header:src_port()
+   local dst_port = prot_header:dst_port()
+
+   local t, t_len = five_tuple(ip_type,
+                               ip_src, src_port, ip_dst, dst_port)
+   -- TODO: Use IP destination to determine backend pool.
+
+   -- unparse L4
+   datagram:unparse(1)
+   return true, t, t_len, nil, datagram, ip_total_length
 end
 
 function Rewriting:process_packet(i, o)
@@ -120,36 +176,29 @@ function Rewriting:process_packet(i, o)
    end
    -- Maybe consider moving packet parsing after ethernet into go?
    local ip_class = eth_header:upper_layer()
+   -- decapsulate from ethernet
+   datagram:pop(1)
 
    local ip_header = datagram:parse_match(ip_class)
    if ip_header == nil then
       P.free(p)
       return
    end
-   local ip_src = ip_header:src()
-   local ip_dst = ip_header:dst()
-   local l4_type
-   if l3_type == L3_IPV4 then
-      l4_type = ip_header:protocol()
-   else
-      l4_type = ip_header:next_header()
-   end
-   if not (l4_type == L4_TCP or l4_type == L4_UDP) then
+   
+   local forward_datagram, t, t_len,
+      backend_pool, new_datagram, ip_total_length =
+         self:handle_fragmentation_and_get_forwarding_params(
+            datagram, ip_header, l3_type
+         )
+   if not forward_datagram then
       P.free(p)
       return
    end
-   local prot_class = ip_header:upper_layer()
-
-   local prot_header = datagram:parse_match(prot_class)
-   if prot_header == nil then
+   if datagram ~= new_datagram then
       P.free(p)
-      return
+      datagram = new_datagram
    end
-   local src_port = prot_header:src_port()
-   local dst_port = prot_header:dst_port()
 
-   local t, t_len = five_tuple(l3_type,
-                               ip_src, src_port, ip_dst, dst_port)
    local backend, backend_len = get_backend(t, t_len)
    if backend_len == 0 then
       P.free(p)
@@ -163,10 +212,6 @@ function Rewriting:process_packet(i, o)
 
    -- unparse L4 and L3
    datagram:unparse(2)
-   -- decapsulate from ethernet
-   datagram:pop(1)
-
-   local _, payload_len = datagram:payload()
 
    local gre_header = GRE:new({protocol = l3_type})
    datagram:push(gre_header)
@@ -176,7 +221,7 @@ function Rewriting:process_packet(i, o)
                                      protocol = L4_GRE,
                                      ttl = self.ttl})
    outer_ip_header:total_length(
-      payload_len + gre_header:sizeof() + outer_ip_header:sizeof())
+      ip_total_length + gre_header:sizeof() + outer_ip_header:sizeof())
    -- need to recompute checksum after changing total_length
    outer_ip_header:checksum()
    datagram:push(outer_ip_header)
