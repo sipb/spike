@@ -219,17 +219,18 @@ function PacketSynthesisContext:add_gre_header(config)
 end
 
 -- Arguments:
--- other_spike_addr (binary, default network_config.other_spike_addr) --
---    Address of spike sending the packet.
--- spike_addr (binary, default_network_config.spike_addr) -- Address of
---    spike (receiving the packet).
+-- other_spike_internal_addr (binary,
+--    default network_config.other_spike_internal_addr)
+--    -- Address of spike sending the packet.
+-- spike_internal_addr (binary, default_network_config.spike_internal_addr)
+--    -- Address of spike (receiving the packet).
 function PacketSynthesisContext:add_spike_to_spike_ip_header(config)
    config = config or {}
    self:add_ip_header(clone_table(config, {
-      src_addr = config.other_spike_addr or
-         self.network_config.other_spike_addr,
-      dst_addr = config.spike_addr or
-         self.network_config.spike_addr
+      src_addr = config.other_spike_internal_addr or
+         self.network_config.other_spike_internal_addr,
+      dst_addr = config.spike_internal_addr or
+         self.network_config.spike_internal_addr
    }))
 end
 
