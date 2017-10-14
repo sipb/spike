@@ -14,6 +14,7 @@ local godefs = require("godefs")
 local PacketSynthesisContext = require("testing/packet_synthesis")
 local TestStreamApp = require("testing/test_stream_app")
 local TestCollectApp = require("testing/test_collect_app")
+local UnitTests = require("testing/unit_tests")
 
 require("networking_magic_numbers")
 
@@ -23,6 +24,7 @@ local function runmain()
    local debug_bypass_spike = false
    local input_from_pcap = false
    local output_to_pcap = true
+   local run_unit_tests = true
 
    godefs.Init()
    godefs.AddBackend("http://cheesy-fries.mit.edu/health",
@@ -46,20 +48,26 @@ local function runmain()
       client_port = 12345
    }
 
+   if run_unit_tests then
+      local unit_tests = UnitTests:new(network_config)
+      unit_tests:run()
+      return
+   end
+
    local synthesis = PacketSynthesisContext:new(network_config, test_ipv6)
 
    local packets
    if test_fragmentation then
-      packets = synthesis:make_redirected_ipv4_fragment_packets()
+      packets = synthesis:make_in_packets_redirected_ipv4_fragments()
    elseif test_ipv6 then
       packets = {
-         [1] = synthesis:make_ip_packet({
+         [1] = synthesis:make_in_packet_normal({
             l3_prot = L3_IPV6
          })
       }
    else
       packets = {
-         [1] = synthesis:make_ip_packet()
+         [1] = synthesis:make_in_packet_normal()
       }
    end
 

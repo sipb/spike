@@ -235,6 +235,20 @@ function PacketSynthesisContext:add_spike_to_spike_ip_header(config)
 end
 
 -- Arguments:
+-- spike_internal_addr (binary, default network_config.spike_internal_addr)
+--    -- Address of spike.
+-- backend_addr (binary, required) -- Address of backend that the packet
+--    is sent to.
+function PacketSynthesisContext:add_spike_to_backend_ip_header(config)
+   config = config or {}
+   self:add_ip_header(clone_table(config, {
+      src_addr = config.spike_internal_addr or
+         self.network_config.spike_internal_addr,
+      dst_addr = config.backend_addr
+   }))
+end
+
+-- Arguments:
 -- src_mac (binary, default router_mac) -- Source MAC address.
 -- dst_mac (binary, default spike_mac) -- Destination MAC address.
 -- inner_prot/l3_prot (int, default L3_IPV4) -- Inner protocol.
@@ -254,7 +268,8 @@ function PacketSynthesisContext:get_packet()
    return self.datagram:packet()
 end
 
-function PacketSynthesisContext:make_ip_packet(config)
+-- Returns a packet similar to what Spike would receive in the normal case.
+function PacketSynthesisContext:make_in_packet_normal(config)
    config = config or {}
    self:new_packet()
    self:add_payload(config)
@@ -263,7 +278,9 @@ function PacketSynthesisContext:make_ip_packet(config)
    return self:get_packet()
 end
 
-function PacketSynthesisContext:make_redirected_ipv4_fragment_packet(
+-- Returns a packet similar to what Spike would receive in the case when
+-- an IPv4 fragment has been redirected to it.
+function PacketSynthesisContext:make_in_packet_redirected_ipv4_fragment(
    config
 )
    config = config or {}
@@ -306,7 +323,9 @@ function PacketSynthesisContext:make_ipv4_fragments(config)
    return fragments, num_fragments
 end
 
-function PacketSynthesisContext:make_redirected_ipv4_fragment_packets(
+-- Returns a set of packets similar to what Spike would receive
+-- in the case when a set of IPv4 fragments have been redirected to it.
+function PacketSynthesisContext:make_in_packets_redirected_ipv4_fragments(
    config
 )
    config = config or {}
@@ -321,7 +340,7 @@ function PacketSynthesisContext:make_redirected_ipv4_fragment_packets(
       -- fragment offset field is units of 8-byte blocks
       local frag_len = string.len(fragments[i])
       local frag_off = curr_offset / 8 
-      packets[i] = self:make_redirected_ipv4_fragment_packet(
+      packets[i] = self:make_in_packet_redirected_ipv4_fragment(
          clone_table(config, {
             payload = fragments[i],
             payload_len = frag_len,
@@ -332,6 +351,22 @@ function PacketSynthesisContext:make_redirected_ipv4_fragment_packets(
       curr_offset = curr_offset + frag_len
    end
    return packets, num_fragments
+end
+
+function PacketSynthesisContext:make_out_packet_normal(config)
+   config = config or {}
+   self:new_packet()
+   self:add_payload(config)
+   self:add_tcp_ip_headers(config)
+   self:add_gre_header(config)
+   self:add_spike_to_backend_ip_header(clone_table(config, {
+      inner_prot = L4_GRE
+   }))
+   self:add_ethernet_header(clone_table(config, {
+      src_mac = self.network_config.spike_mac,
+      dst_mac = self.network_config.router_mac
+   }))
+   return self:get_packet()
 end
 
 return PacketSynthesisContext
