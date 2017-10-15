@@ -26,7 +26,10 @@ func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 	quit := make(chan struct{})
 	info.quit = quit
 	backends := make(chan *common.Backend, 1)
-	health.CheckFun(service,
+
+	health.CheckFun(service, func() bool {
+		return health.HealthHttp(service, 2*time.Second)
+	},
 		func() {
 			log.Printf("backend %v is healthy\n", service)
 			down := make(chan struct{})
@@ -43,7 +46,7 @@ func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 			close(backend.Unhealthy)
 			mm.Remove(backend)
 		},
-		time.Second, 2*time.Second, 5*time.Second, quit)
+		time.Second, 5*time.Second, quit)
 }
 
 func main() {

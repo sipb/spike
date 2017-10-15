@@ -41,7 +41,7 @@ func Init() {
 // AddBackend adds a new backend to the health checker.
 //
 //export AddBackend
-func AddBackend(service string, ip []byte) {
+func AddBackend(service string, ip []byte, healthCheckType int) {
 	// make copies of passed-in data to avoid lua gc
 	newServiceBytes := make([]byte, len(service))
 	copy(newServiceBytes, []byte(service))
@@ -52,7 +52,22 @@ func AddBackend(service string, ip []byte) {
 	backends := make(chan *common.Backend, 1)
 	quit := make(chan struct{})
 	info := &serviceInfo{newIP, quit}
-	health.CheckFun(newService,
+
+	var healthCheckFunc func() bool
+	switch healthCheckType {
+	case health.HEALTH_CHECK_NONE:
+		healthCheckFunc = func() bool {
+			return true
+		}
+	case health.HEALTH_CHECK_HTTP:
+		healthCheckFunc = func() bool {
+			return health.HealthHttp(newService, 2*time.Second)
+		}
+	default:
+		panic("Unrecognized health check type")
+	}
+
+	health.CheckFun(newService, healthCheckFunc,
 		func() {
 			down := make(chan struct{})
 			backend := &common.Backend{
@@ -67,7 +82,7 @@ func AddBackend(service string, ip []byte) {
 			close(backend.Unhealthy)
 			g.maglev.Remove(backend)
 		},
-		time.Second, 2*time.Second, 5*time.Second, quit)
+		time.Second, 5*time.Second, quit)
 	g.servicesLock.Lock()
 	defer g.servicesLock.Unlock()
 	g.services[newService] = info
