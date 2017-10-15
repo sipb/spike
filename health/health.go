@@ -87,13 +87,13 @@ func check(
 // health checks the given health service
 func health(healthService string) bool {
 	resp, _ := http.Get(healthService)
-	bytes, _ := ioutil.ReadAll(resp.Body)
-
-	resp.Body.Close()
 
 	if resp == nil {
 		return false
 	}
+
+	bytes, _ := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 
 	if strings.Contains(string(bytes), "healthy") {
 		return true
