@@ -29,11 +29,13 @@ function UnitTests:new(network_config)
 end
 
 -- Arguments:
+-- test_name (string) -- Name of test.
 -- input_packets (array of packets) -- Packets to stream into Spike.
 -- output_generators (array of functions) -- Generators that produce
 --    the expected output from Spike. These are functions that take
 --    in the backend IP address and produce a packet.
-function UnitTests:run_test(input_packets, output_generators)
+function UnitTests:run_test(test_name, input_packets, output_generators)
+   print("Running test: "..test_name)
    self.stream_app:init(input_packets)
 
    self.expected_output_generator_app:init(output_generators)
@@ -64,6 +66,7 @@ function UnitTests:run_test(input_packets, output_generators)
       end
    end
    print("Test passed!")
+   print()
 
    self.out_collect_app:clear()
    self.expected_collect_app:clear()
@@ -121,7 +124,7 @@ function UnitTests:run()
    self.out_collect_app = engine.app_table["out_collect"]
    self.expected_collect_app = engine.app_table["expected_collect"]
 
-   self:run_test({
+   self:run_test("single_ipv4_packet", {
       [1] = self.synthesis:make_in_packet_normal()
    }, {
       [1] = function(backend_addr)
@@ -131,7 +134,7 @@ function UnitTests:run()
       end
    })
 
-   self:run_test(
+   self:run_test("ipv4_fragments",
       self.synthesis:make_in_packets_redirected_ipv4_fragments(), {
       [1] = function(backend_addr)
          return self.synthesis:make_out_packet_normal({
