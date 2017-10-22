@@ -98,11 +98,11 @@ func health(healthService string, httpTimeout time.Duration) bool {
 	if err != nil {
 		return false
 	}
+	defer resp.Body.Close()
 	bytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
 
 	if strings.Contains(string(bytes), "healthy") {
 		return true
