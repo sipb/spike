@@ -70,16 +70,14 @@ func check(
 		select {
 		case <-quit:
 			return
-		case t := <-ticker.C:
+		case <-ticker.C:
 			if health(healthService, httpTimeout) {
-				start = t
+				start = time.Now()
 				if !healthy {
 					healthy = true
 					updates <- true
 				}
-			}
-
-			if healthy && t.After(start.Add(healthTimeout)) {
+			} else if healthy && time.Now().After(start.Add(healthTimeout)) {
 				healthy = false
 				updates <- false
 			}
