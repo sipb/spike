@@ -56,7 +56,8 @@ function ExpectedOutputApp:process_packet(i, o)
 
    local match_found = false
    for _, addr in ipairs(self.valid_backend_addrs) do
-      if ffi.string(backend_addr) == ffi.string(addr) then
+      -- TODO: Extend to support IPv6 backends
+      if ffi.string(backend_addr, 4) == ffi.string(addr, 4) then
          match_found = true
          break
       end
