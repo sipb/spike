@@ -52,11 +52,11 @@ func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 func main() {
 	const lookupSizeM = 11
 
-	backends := map[string]*serviceInfo{
-		"http://cheesy-fries.mit.edu/health": &serviceInfo{
-			[]byte{1, 2, 3, 4}, nil},
-		"http://strawberry-habanero.mit.edu/health": &serviceInfo{
-			[]byte{5, 6, 7, 8}, nil},
+	config := common.ReadConfig()
+
+	backends := map[string]*serviceInfo{}
+	for _, bCfg := range config.Backends {
+		backends[bCfg.Address] = &serviceInfo{bCfg.Ip, nil}
 	}
 
 	mm := maglev.New(lookupSizeM)
