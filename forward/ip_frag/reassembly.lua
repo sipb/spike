@@ -191,7 +191,9 @@ function IPFragReassembly:process_datagram(datagram)
    local frag_off = inner_ip_header:frag_off()
    local mf = band(inner_ip_header:flags(), IP_MF_FLAG) ~= 0
 
-   local payload, payload_len = datagram:payload()
+   local payload_ptr, payload_len = datagram:payload()
+   local payload = ffi.new('char[?]', payload_len)
+   ffi.copy(payload, payload_ptr, payload_len)
    local id, id_len = create_fragment_set_id(src, dst, next_prot, ident)
    local id_str = ffi.string(id, id_len)
    local reassembled_pkt, reassembled_pkt_len = self:process_frag(id_str, frag_off, mf, payload, payload_len)
