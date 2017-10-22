@@ -1,4 +1,5 @@
 local L = require("core.link")
+local P = require("core.packet")
 
 local TestCollectApp = {}
 
@@ -17,6 +18,13 @@ function TestCollectApp:push()
       local p = L.receive(i)
       table.insert(self.packets, p)
    end
+end
+
+function TestCollectApp:clear()
+    for i, p in pairs(self.packets) do
+        P.free(p)
+        self.packets[i] = nil
+    end
 end
 
 return TestCollectApp

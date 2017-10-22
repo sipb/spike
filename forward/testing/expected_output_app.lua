@@ -22,7 +22,9 @@ end
 --    the current session.
 function ExpectedOutputApp:new(opts)
    return setmetatable({
-      synthesis = opts.synthesis
+      synthesis = opts.synthesis,
+      curr_packet_index = 1,
+      expected_output_generators = nil
    }, {
       __index = ExpectedOutputApp
    })
@@ -36,6 +38,11 @@ function ExpectedOutputApp:push()
    end
 end
 
+function ExpectedOutputApp:init(generators)
+    self.curr_packet_index = 1
+    self.expected_output_generators = generators
+end
+
 function ExpectedOutputApp:process_packet(i, o)
    local p = L.receive(i)
 
@@ -46,9 +53,9 @@ function ExpectedOutputApp:process_packet(i, o)
 
    -- TODO: Automate this check.
    print("This should be a backend IP address: "..IPV4:ntop(backend_addr))
-   local expected_packet = self.synthesis:make_out_packet_normal({
-      backend_addr = backend_addr
-   })
+   local expected_packet =
+      self.expected_output_generators[self.curr_packet_index](backend_addr)
+   self.curr_packet_index = self.curr_packet_index + 1
 
    link.transmit(o, expected_packet)
 end
