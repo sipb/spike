@@ -67,7 +67,7 @@ func AddBackend(service string, ip []byte) {
 			close(backend.Unhealthy)
 			g.maglev.Remove(backend)
 		},
-		100*time.Millisecond, 500*time.Millisecond, quit)
+		time.Second, 2*time.Second, 5*time.Second, quit)
 	g.servicesLock.Lock()
 	defer g.servicesLock.Unlock()
 	g.services[newService] = info

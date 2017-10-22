@@ -9,10 +9,10 @@ import (
 
 // CheckFun is a wrapper around Check using callback functions.
 func CheckFun(service string, onUp func(), onDown func(),
-	pollDelay time.Duration, timeout time.Duration,
-	quit <-chan struct{}) {
+	pollDelay time.Duration, httpTimeout time.Duration,
+	healthTimeout time.Duration, quit <-chan struct{}) {
 	updates := make(chan bool)
-	Check(service, pollDelay, timeout, updates, quit)
+	Check(service, pollDelay, httpTimeout, healthTimeout, updates, quit)
 	go func() {
 		for {
 			up, ok := <-updates
@@ -37,17 +37,20 @@ func CheckFun(service string, onUp func(), onDown func(),
 func Check(
 	healthService string,
 	pollDelay time.Duration,
-	timeout time.Duration,
+	httpTimeout time.Duration,
+	healthTimeout time.Duration,
 	updates chan<- bool,
 	quit <-chan struct{},
 ) {
-	go check(healthService, pollDelay, timeout, updates, quit)
+	go check(healthService, pollDelay, httpTimeout,
+		healthTimeout, updates, quit)
 }
 
 func check(
 	healthService string,
 	pollDelay time.Duration,
-	timeout time.Duration,
+	httpTimeout time.Duration,
+	healthTimeout time.Duration,
 	updates chan<- bool,
 	quit <-chan struct{},
 ) {
@@ -67,16 +70,14 @@ func check(
 		select {
 		case <-quit:
 			return
-		case t := <-ticker.C:
-			if health(healthService) {
-				start = t
+		case <-ticker.C:
+			if health(healthService, httpTimeout) {
+				start = time.Now()
 				if !healthy {
 					healthy = true
 					updates <- true
 				}
-			}
-
-			if healthy && t.After(start.Add(timeout)) {
+			} else if healthy && time.Now().After(start.Add(healthTimeout)) {
 				healthy = false
 				updates <- false
 			}
@@ -85,13 +86,19 @@ func check(
 }
 
 // health checks the given health service
-func health(healthService string) bool {
-	resp, _ := http.Get(healthService)
-	bytes, _ := ioutil.ReadAll(resp.Body)
+func health(healthService string, httpTimeout time.Duration) bool {
+	client := http.Client{
+		Timeout: httpTimeout,
+	}
 
-	resp.Body.Close()
-
-	if resp == nil {
+	resp, err := client.Get(healthService)
+	// Check if response timeouts or returns an HTTP error
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
 		return false
 	}
 
