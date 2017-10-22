@@ -19,4 +19,9 @@ function TestStreamApp:pull()
    end
 end
 
+function TestStreamApp:init(packets)
+   self.curr_packet_index = 1
+   self.packets = packets
+end
+
 return TestStreamApp

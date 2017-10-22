@@ -13,20 +13,23 @@ local godefs = require("godefs")
 
 local PacketSynthesisContext = require("testing/packet_synthesis")
 local TestStreamApp = require("testing/test_stream_app")
+local TestCollectApp = require("testing/test_collect_app")
+local UnitTests = require("testing/unit_tests")
 
 require("networking_magic_numbers")
 
 local function runmain()
-   local test_fragmentation = false
-   local test_ipv6 = true
-   local debug_bypass_spike = true
-
    godefs.Init()
    godefs.AddBackend("http://cheesy-fries.mit.edu/health",
                      IPV4:pton("1.3.5.7"), 4)
    godefs.AddBackend("http://strawberry-habanero.mit.edu/health",
                      IPV4:pton("2.4.6.8"), 4)
    C.usleep(3000000) -- wait for backends to come up
+
+   local backend_addrs = {
+      [1] = IPV4:pton("1.3.5.7"),
+      [2] = IPV4:pton("2.4.6.8")
+   }
 
    local network_config = {
       spike_mac = "38:c3:0d:1d:34:df",
@@ -40,45 +43,12 @@ local function runmain()
       spike_internal_ipv6_addr = "0:0:0:0:0:ffff:c0a8:100",
       other_spike_internal_ipv6_addr = "0:0:0:0:0:ffff:c0a8:101",
       backend_vip_port = 80,
-      client_port = 12345
+      client_port = 12345,
+      backend_addrs = backend_addrs
    }
 
-   local synthesis = PacketSynthesisContext:new(network_config, test_ipv6)
-
-   local packets
-   if test_fragmentation then
-      packets = synthesis:make_redirected_ipv4_fragment_packets()
-   elseif test_ipv6 then
-      packets = {
-         [1] = synthesis:make_ip_packet({
-            l3_prot = L3_IPV6
-         })
-      }
-   else
-      packets = {
-         [1] = synthesis:make_ip_packet()
-      }
-   end
-
-   local c = config.new()
-   config.app(c, "stream", TestStreamApp, {
-      packets = packets
-   })
-   config.app(c, "spike", Rewriting, {
-      src_mac = network_config.spike_mac,
-      dst_mac = network_config.router_mac,
-      ipv4_addr = network_config.spike_internal_addr
-   })
-   config.app(c, "pcap_writer", P.PcapWriter, "test_out.pcap")
-   if debug_bypass_spike then
-      config.link(c, "stream.output -> pcap_writer.input")
-   else
-      config.link(c, "stream.output -> spike.input")
-      config.link(c, "spike.output -> pcap_writer.input")
-   end
-
-   engine.configure(c)
-   engine.main({duration = 1, report = {showlinks = true}})
+   local unit_tests = UnitTests:new(network_config)
+   unit_tests:run()
 end
 
 runmain()
