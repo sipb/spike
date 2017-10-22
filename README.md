@@ -18,12 +18,18 @@ load balancer, [Maglev][0].
 * Make sure that your [go workspace](https://golang.org/doc/code.html)
   is set up properly, and that the spike repository is in
   `$GOPATH/src/github.com/sipb/spike`.
-* Clone and build the snabb repository.
+* Clone and build the [snabb repository](https://github.com/snabbco/snabb).
+  (This is unlikely to work on non-Linux operating systems.)
 * Run `go get github.com/dchest/siphash github.com/stretchr/testify`.
 * Run `make`.
 
 It should now be possible to run the health check demo (`bin/demo`), as
-well as the snabb integration demo (`bin/runspike`).
+well as the snabb integration demo (`bin/runspike`). `runspike` should
+be run as root and requires two environment variables, `SNABB` set to
+the path to the `snabb` executable and `SPIKE` set to the path to the
+folder, so you might run something like:
+
+    sudo env SNABB=/path/to/snabb SPIKE=/path/to/spike bin/runspike
 
 You can run the tests with `make test`.
 
