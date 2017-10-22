@@ -26,6 +26,11 @@ local function runmain()
                      IPV4:pton("2.4.6.8"), 4)
    C.usleep(3000000) -- wait for backends to come up
 
+   local backend_addrs = {
+      [1] = IPV4:pton("1.3.5.7"),
+      [2] = IPV4:pton("2.4.6.8")
+   }
+
    local network_config = {
       spike_mac = "38:c3:0d:1d:34:df",
       router_mac = "ce:d2:85:61:1e:01",
@@ -38,7 +43,8 @@ local function runmain()
       spike_internal_ipv6_addr = "0:0:0:0:0:ffff:c0a8:100",
       other_spike_internal_ipv6_addr = "0:0:0:0:0:ffff:c0a8:101",
       backend_vip_port = 80,
-      client_port = 12345
+      client_port = 12345,
+      backend_addrs = backend_addrs
    }
 
    local unit_tests = UnitTests:new(network_config)

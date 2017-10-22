@@ -1,3 +1,4 @@
+local ffi = require("ffi")
 local L = require("core.link")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
@@ -23,6 +24,7 @@ end
 function ExpectedOutputApp:new(opts)
    return setmetatable({
       synthesis = opts.synthesis,
+      valid_backend_addrs = nil,
       curr_packet_index = 1,
       expected_output_generators = nil
    }, {
@@ -38,9 +40,10 @@ function ExpectedOutputApp:push()
    end
 end
 
-function ExpectedOutputApp:init(generators)
+function ExpectedOutputApp:init(generators, valid_backend_addrs)
     self.curr_packet_index = 1
     self.expected_output_generators = generators
+    self.valid_backend_addrs = valid_backend_addrs
 end
 
 function ExpectedOutputApp:process_packet(i, o)
@@ -51,8 +54,18 @@ function ExpectedOutputApp:process_packet(i, o)
    local datagram = Datagram:new(p)
    local backend_addr = extract_backend_addr(datagram)
 
-   -- TODO: Automate this check.
-   print("This should be a backend IP address: "..IPV4:ntop(backend_addr))
+   local match_found = false
+   for _, addr in ipairs(self.valid_backend_addrs) do
+      if ffi.string(backend_addr) == ffi.string(addr) then
+         match_found = true
+         break
+      end
+   end
+   if not match_found then
+      error("Packet forwarded to bad backend address: "..
+         IPV4:ntop(backend_addr))
+   end
+
    local expected_packet =
       self.expected_output_generators[self.curr_packet_index](backend_addr)
    self.curr_packet_index = self.curr_packet_index + 1

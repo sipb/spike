@@ -34,11 +34,15 @@ end
 -- output_generators (array of functions) -- Generators that produce
 --    the expected output from Spike. These are functions that take
 --    in the backend IP address and produce a packet.
-function UnitTests:run_test(test_name, input_packets, output_generators)
+function UnitTests:run_test(test_name, input_packets, output_generators, valid_backend_addrs)
+   valid_backend_addrs =
+      valid_backend_addrs or self.network_config.backend_addrs
+
    print("Running test: "..test_name)
    self.stream_app:init(input_packets)
 
-   self.expected_output_generator_app:init(output_generators)
+   self.expected_output_generator_app:init(
+      output_generators, valid_backend_addrs)
    local expected_num_output_packets = #output_generators
 
    local test_start_time = os.clock()
@@ -88,7 +92,8 @@ function UnitTests:run()
 
    config.app(c, "out_tee", B.Tee)
    config.app(c, "expected_output_generator", ExpectedOutputApp, {
-      synthesis = self.synthesis
+      synthesis = self.synthesis,
+      backend_addrs = self.backend_addrs
    })
    config.app(c, "out_pcap_writer", P.PcapWriter, "test_out.pcap")
    config.app(c, "out_collect", TestCollectApp)
