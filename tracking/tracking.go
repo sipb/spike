@@ -17,19 +17,19 @@ type entry struct {
 //
 // Cache is not thread-safe.
 type Cache struct {
-	table  map[uint64]entry
-	miss   func(uint64) (*common.Backend, bool)
+	table  map[common.FiveTuple]entry
+	miss   func(common.FiveTuple) (*common.Backend, bool)
 	expiry time.Duration
 }
 
 // New constructs a new connection-tracking table which caches the given
 // function.
 func New(
-	miss func(uint64) (*common.Backend, bool),
+	miss func(common.FiveTuple) (*common.Backend, bool),
 	expiry time.Duration,
 ) *Cache {
 	return &Cache{
-		table:  make(map[uint64]entry),
+		table:  make(map[common.FiveTuple]entry),
 		miss:   miss,
 		expiry: expiry,
 	}
@@ -39,7 +39,7 @@ func New(
 // cached backend is unhealthy, or the key is not cached, it retrieves a
 // backend from the underlying function.  Lookup returns false if no
 // backend is available.
-func (c *Cache) Lookup(key uint64) (*common.Backend, bool) {
+func (c *Cache) Lookup(key common.FiveTuple) (*common.Backend, bool) {
 	e, ok := c.table[key]
 	if ok {
 		if e.backend == nil || time.Now().After(e.expire) {

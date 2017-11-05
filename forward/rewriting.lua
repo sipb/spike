@@ -19,8 +19,10 @@ local IPFragReassembly = require("ip_frag/reassembly")
 _G._NAME = "rewriting"  -- Snabb requires this for some reason
 
 -- Return the backend associated with a five-tuple
-local function get_backend(five_tuple, five_tuple_len)
-   return godefs.Lookup(five_tuple, five_tuple_len)
+local function get_backend(t)
+   return godefs.Lookup(t.src_ip, t.dst_ip,
+                        t.src_port, t.dst_port,
+                        t.protocol_num)
 end
 
 
@@ -95,8 +97,7 @@ end
 -- Returns:
 -- forward_datagram (bool) -- Indicates whether there is a datagram to
 --    forward.
--- t (binary) -- Five tuple of datagram.
--- t_len (int) -- Length of t.
+-- t (table) -- Five tuple of datagram.
 -- backend_pool (int) -- Backend pool to forward the packet to.
 -- new_datagram (datagram) -- Datagram to forward. Should have Ethernet
 --    header popped or missing, and IP header parsed.
@@ -121,9 +122,9 @@ function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_h
       if frag_off ~= 0 or mf then
          -- Packet is an IPv4 fragment; redirect to another spike
          -- Set ports to zero to get three-tuple
-         local t3, t3_len = five_tuple(ip_type, ip_src, 0, ip_dst, 0)
+         local t3 = five_tuple(ip_src, ip_dst, 0, 0, ip_type)
          -- TODO: Return spike backend pool
-         return true, t3, t3_len, nil, datagram, ip_total_length
+         return true, t3, nil, datagram, ip_total_length
       end
    end
 
@@ -150,13 +151,12 @@ function Rewriting:handle_fragmentation_and_get_forwarding_params(datagram, ip_h
    local src_port = prot_header:src_port()
    local dst_port = prot_header:dst_port()
 
-   local t, t_len = five_tuple(ip_type,
-                               ip_src, src_port, ip_dst, dst_port)
+   local t = five_tuple(ip_src, ip_dst, src_port, dst_port, ip_type)
    -- TODO: Use IP destination to determine backend pool.
 
    -- unparse L4
    datagram:unparse(1)
-   return true, t, t_len, nil, datagram, ip_total_length
+   return true, t, nil, datagram, ip_total_length
 end
 
 function Rewriting:process_packet(i, o)
@@ -184,8 +184,8 @@ function Rewriting:process_packet(i, o)
       P.free(p)
       return
    end
-   
-   local forward_datagram, t, t_len,
+
+   local forward_datagram, t,
       backend_pool, new_datagram, ip_total_length =
          self:handle_fragmentation_and_get_forwarding_params(
             datagram, ip_header, l3_type
@@ -199,8 +199,8 @@ function Rewriting:process_packet(i, o)
       datagram = new_datagram
    end
 
-   local backend, backend_len = get_backend(t, t_len)
-   if backend_len == 0 then
+   local backend, backend_len = get_backend(t)
+   if backend_len < 0 then
       P.free(p)
       return
    end

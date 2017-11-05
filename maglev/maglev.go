@@ -130,6 +130,10 @@ func (t *Table) Lookup(key uint64) (*common.Backend, bool) {
 	return t.lookup[key%t.m], true
 }
 
+func (t *Table) Lookup5(f common.FiveTuple) (*common.Backend, bool) {
+	return t.Lookup(f.Hash())
+}
+
 func (t *Table) populate() {
 	nonzero := false
 	for _, p := range t.permutations {

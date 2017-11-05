@@ -4,6 +4,7 @@ import "C"
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -35,7 +36,7 @@ var g globals
 func Init() {
 	g.services = make(map[string]*serviceInfo)
 	g.maglev = maglev.New(maglev.SmallM)
-	g.tracker = tracking.New(g.maglev.Lookup, 15*time.Minute)
+	g.tracker = tracking.New(g.maglev.Lookup5, 15*time.Minute)
 }
 
 // AddBackend adds a new backend to the health checker.
@@ -89,15 +90,25 @@ func RemoveBackend(service string) {
 
 // Lookup determines the backend associated with a five-tuple.  It
 // stores its result in output, and returns the number of bytes in the
-// output.
+// output, or -1 if no backend was found.
 //
 //export Lookup
-func Lookup(fiveTuple []byte, output []byte) int {
-	backend, ok := g.tracker.Lookup(common.NewFiveTuple(fiveTuple).Hash())
+func Lookup(
+	src_ip, dst_ip []byte,
+	src_port, dst_port uint16,
+	protocol_num uint16,
+	output []byte) int {
+	t, err := common.NewFiveTuple(
+		src_ip, dst_ip, src_port, dst_port, protocol_num)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	backend, ok := g.tracker.Lookup(t)
 	if ok {
 		return copy(output, backend.IP)
 	}
-	return 0
+	return -1
 }
 
 func main() {

@@ -57,18 +57,24 @@ func main() {
 	}
 
 	mm := maglev.New(lookupSizeM)
-	tt := tracking.New(mm.Lookup, 10*time.Second)
+	tt := tracking.New(mm.Lookup5, 10*time.Second)
 
 	for service, info := range backends {
 		startChecker(mm, service, info)
 	}
 
-	testPackets := []string{
-		"19.168.124.100/572/81.9.179.69/80/4",
-		"192.16.124.100/50270/81.209.179.69/80/6",
-		"12.168.12.100/50268/81.209.179.69/80/6",
-		"192.168.1.0/50266/81.209.179.69/80/6",
-		"92.168.124.100/50264/81.209.179.69/80/6",
+	p0, err := common.NewFiveTuple([]byte{19, 168, 124, 100}, []byte{81, 9, 179, 69}, 572, 80, common.L3_IPV4)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	testPackets := []common.FiveTuple{
+		p0,
+		// "19.168.124.100/572/81.9.179.69/80/4",
+		// "192.16.124.100/50270/81.209.179.69/80/6",
+		// "12.168.12.100/50268/81.209.179.69/80/6",
+		// "192.168.1.0/50266/81.209.179.69/80/6",
+		// "92.168.124.100/50264/81.209.179.69/80/6",
 	}
 
 	// takes user input command to add or remove server
@@ -134,11 +140,10 @@ func main() {
 	}
 }
 
-func lookupPackets(tt *tracking.Cache, packets []string) map[string][]byte {
-	ret := make(map[string][]byte)
+func lookupPackets(tt *tracking.Cache, packets []common.FiveTuple) map[common.FiveTuple][]byte {
+	ret := make(map[common.FiveTuple][]byte)
 	for _, p := range packets {
-		key := common.NewFiveTuple([]byte(p)).Hash()
-		if serv, ok := tt.Lookup(key); ok {
+		if serv, ok := tt.Lookup(p); ok {
 			ret[p] = serv.IP
 		} else {
 			ret[p] = nil
