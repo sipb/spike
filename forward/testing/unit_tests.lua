@@ -80,8 +80,9 @@ function UnitTests:run()
    local rewriting_config = {
       src_mac = self.network_config.spike_mac,
       dst_mac = self.network_config.router_mac,
+      ipv4_addr = self.network_config.spike_internal_addr,
+      ipv6_addr = self.network_config.spike_internal_ipv6_addr
    }
-   rewriting_config.ipv4_addr = self.network_config.spike_internal_addr
 
    local c = config.new()
    config.app(c, "stream", TestStreamApp, {})
