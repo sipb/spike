@@ -35,12 +35,6 @@ local Rewriting = {}
 -- ttl (int, default 30) -- the TTL to set on outgoing packets
 function Rewriting:new(opts)
    local ipv4_addr, ipv6_addr, err
-   if opts.ipv4_addr and opts.ipv6_addr then
-      error("cannot specify both ipv4 and ipv6")
-   end
-   if not opts.ipv4_addr and not opts.ipv6_addr then
-      error("need to specify either ipv4addr or ipv6addr")
-   end
    if opts.ipv4_addr then
       ipv4_addr, err = IPV4:pton(opts.ipv4_addr)
       if not ipv4_addr then
@@ -215,6 +209,9 @@ function Rewriting:process_packet(i, o)
 
    local outer_ip_header, outer_l3_type
    if backend_len == 4 then -- IPv4
+      if self.ipv4_addr == nil then
+         error("Spike's IPv4 address not specified.")
+      end
       outer_l3_type = L3_IPV4
       outer_ip_header = IPV4:new({src = self.ipv4_addr,
                                         dst = backend,
@@ -225,6 +222,9 @@ function Rewriting:process_packet(i, o)
       -- need to recompute checksum after changing total_length
       outer_ip_header:checksum()
    elseif backend_len == 16 then -- IPv6
+      if self.ipv6_addr == nil then
+         error("Spike's IPv6 address not specified.")
+      end
       outer_l3_type = L3_IPV6
       outer_ip_header = IPV6:new({src= self.ipv6_addr,
                                         dst = backend,
