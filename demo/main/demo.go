@@ -63,18 +63,13 @@ func main() {
 		startChecker(mm, service, info)
 	}
 
-	p0, err := common.NewFiveTuple([]byte{19, 168, 124, 100}, []byte{81, 9, 179, 69}, 572, 80, common.L3_IPV4)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	testPackets := []common.FiveTuple{
-		p0,
-		// "19.168.124.100/572/81.9.179.69/80/4",
-		// "192.16.124.100/50270/81.209.179.69/80/6",
-		// "12.168.12.100/50268/81.209.179.69/80/6",
-		// "192.168.1.0/50266/81.209.179.69/80/6",
-		// "92.168.124.100/50264/81.209.179.69/80/6",
+	testPackets := make([]common.FiveTuple, 0, 10)
+	for i := byte(0); i < 10; i++ {
+		testPackets = append(testPackets,
+			common.NewFiveTuple(
+				[]byte{10*i + 0, 10*i + 1, 10*i + 2, 10*i + 3},
+				[]byte{10*i + 4, 10*i + 5, 10*i + 6, 10*i + 7},
+				uint16(10*i+8), uint16(10*i+9), common.L3_IPV4))
 	}
 
 	// takes user input command to add or remove server

@@ -4,7 +4,6 @@ import "C"
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -98,11 +97,8 @@ func Lookup(
 	src_port, dst_port uint16,
 	protocol_num uint16,
 	output []byte) int {
-	t, err := common.NewFiveTuple(
+	t := common.NewFiveTuple(
 		src_ip, dst_ip, src_port, dst_port, protocol_num)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	backend, ok := g.tracker.Lookup(t)
 	if ok {

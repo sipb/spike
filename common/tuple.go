@@ -3,7 +3,7 @@ package common
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
+	"net"
 
 	"github.com/dchest/siphash"
 )
@@ -22,24 +22,24 @@ type FiveTuple struct {
 func NewFiveTuple(
 	src_ip, dst_ip []byte,
 	src_port, dst_port uint16,
-	protocol_num uint16) (FiveTuple, error) {
+	protocol_num uint16) FiveTuple {
 	var src_ip_a, dst_ip_a [16]byte
 	switch protocol_num {
 	case L3_IPV4:
 		if len(src_ip) != 4 || len(dst_ip) != 4 {
-			return FiveTuple{}, errors.New("IPv4 address must be length 4")
+			panic("IPv4 address must be length 4")
 		}
 	case L3_IPV6:
 		if len(src_ip) != 16 || len(dst_ip) != 16 {
-			return FiveTuple{}, errors.New("IPv6 address must be length 16")
+			panic("IPv6 address must be length 16")
 		}
 	default:
-		return FiveTuple{}, errors.New("invalid protocol number")
+		panic("invalid protocol number")
 	}
-	for i, x := range src_ip {
+	for i, x := range net.IP(src_ip).To16() {
 		src_ip_a[i] = x
 	}
-	for i, x := range dst_ip {
+	for i, x := range net.IP(dst_ip).To16() {
 		dst_ip_a[i] = x
 	}
 
@@ -49,7 +49,7 @@ func NewFiveTuple(
 		src_port:     src_port,
 		dst_port:     dst_port,
 		protocol_num: protocol_num,
-	}, nil
+	}
 }
 
 func (t *FiveTuple) encode() []byte {
