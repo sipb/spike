@@ -1,36 +1,11 @@
-local ffi = require("ffi")
-
-local B = require("apps.basic.basic_apps")
-local P = require("apps.pcap.pcap")
-local C = require("ffi").C
-local Ethernet = require("lib.protocol.ethernet")
-local IPV4 = require("lib.protocol.ipv4")
-local IPV6 = require("lib.protocol.ipv6")
-local link = require("core.link")
-local packet = require("core.packet")
-
-local Rewriting = require("rewriting")
 local godefs = require("godefs")
 
-local PacketSynthesisContext = require("testing/packet_synthesis")
-local TestStreamApp = require("testing/test_stream_app")
-local TestCollectApp = require("testing/test_collect_app")
 local UnitTests = require("testing/unit_tests")
 
 require("networking_magic_numbers")
 
 local function runmain()
    godefs.Init()
-   godefs.AddBackend("http://cheesy-fries.mit.edu/health",
-                     IPV4:pton("1.3.5.7"), 4, godefs.HEALTH_CHECK_NONE)
-   godefs.AddBackend("http://strawberry-habanero.mit.edu/health",
-                     IPV4:pton("2.4.6.8"), 4, godefs.HEALTH_CHECK_NONE)
-   C.usleep(1000)
-
-   local backend_addrs = {
-      [1] = IPV4:pton("1.3.5.7"),
-      [2] = IPV4:pton("2.4.6.8")
-   }
 
    local network_config = {
       spike_mac = "38:c3:0d:1d:34:df",
@@ -45,7 +20,6 @@ local function runmain()
       other_spike_internal_ipv6_addr = "0:0:0:0:0:ffff:c0a8:101",
       backend_vip_port = 80,
       client_port = 12345,
-      backend_addrs = backend_addrs
    }
 
    local unit_tests = UnitTests:new(network_config)

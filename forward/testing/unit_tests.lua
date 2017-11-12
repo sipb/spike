@@ -2,7 +2,8 @@ local ffi = require("ffi")
 
 local B = require("apps.basic.basic_apps")
 local P = require("apps.pcap.pcap")
-local Match = require("apps.test.match")
+local IPV4 = require("lib.protocol.ipv4")
+local IPV6 = require("lib.protocol.ipv6")
 local Datagram = require("lib.protocol.datagram")
 
 local Rewriting = require("rewriting")
@@ -12,6 +13,7 @@ local PacketSynthesisContext = require("testing/packet_synthesis")
 local TestStreamApp = require("testing/test_stream_app")
 local TestCollectApp = require("testing/test_collect_app")
 local ExpectedOutputApp = require("testing/expected_output_app")
+local BackendTracker = require("testing/backend_tracker")
 
 local UnitTests = {}
 
@@ -22,7 +24,8 @@ function UnitTests:new(network_config)
       stream_app = nil,
       expected_output_generator_app = nil,
       out_collect_app = nil,
-      expected_collect_app = nil
+      expected_collect_app = nil,
+      backend_tracker = BackendTracker:new()
    }, {
       __index = UnitTests
    })
@@ -34,26 +37,50 @@ end
 -- output_generators (array of functions) -- Generators that produce
 --    the expected output from Spike. These are functions that take
 --    in the backend IP address and produce a packet.
-function UnitTests:run_test(test_name, input_packets, output_generators, valid_backend_addrs)
-   valid_backend_addrs =
-      valid_backend_addrs or self.network_config.backend_addrs
-
+function UnitTests:run_test(test_name, input_packets, output_generators, backends)
    print("Running test: "..test_name)
    self.stream_app:init(input_packets)
 
+   self.backend_tracker:set_backends(backends)
    self.expected_output_generator_app:init(
-      output_generators, valid_backend_addrs)
+      output_generators, backends)
    local expected_num_output_packets = #output_generators
 
+   local err = nil
    local test_start_time = os.clock()
+   local flush_counter = -1
    engine.main({done = function()
-      assert(os.clock() - test_start_time < 0.1,
-         "Test timed out. Possibly too many packets were dropped.")
-      return #self.out_collect_app.packets ==
+      if os.clock() - test_start_time > 0.1 then
+         err = "Test timed out. Possibly too many packets were dropped."
+         return true
+      end
+
+      if flush_counter ~= -1 then
+         if #self.out_collect_app.packets ~=
+            expected_num_output_packets then
+            err = "Too may packets produced."
+            return true
+         end
+         flush_counter = flush_counter - 1
+         return flush_counter == 0
+      end
+
+      -- Wait for packets to be flushed to pcap.
+      if #self.out_collect_app.packets ==
          expected_num_output_packets and
          #self.expected_collect_app.packets ==
-         expected_num_output_packets
+         expected_num_output_packets then
+         flush_counter = 5
+      end
    end, no_report = true})
+   if self.expected_output_generator_app.err then
+      err = self.expected_output_generator_app.err
+   end
+
+   -- Throw error outside of engine so that pcap files will be written to.
+   if err then
+      error(err)
+   end
 
    local out_datagram = Datagram:new(self.out_collect_app.packets[1])
    local expected_datagram = Datagram:new(
@@ -77,6 +104,42 @@ function UnitTests:run_test(test_name, input_packets, output_generators, valid_b
 end
 
 function UnitTests:run()
+   local ipv4_backends = {
+      {
+         name = "backend1",
+         addr = IPV4:pton("1.3.5.7"),
+         addr_len = 4,
+         health_check_type = godefs.HEALTH_CHECK_NONE
+      },
+      {
+         name = "backend2",
+         addr = IPV4:pton("2.4.6.8"),
+         addr_len = 4,
+         health_check_type = godefs.HEALTH_CHECK_NONE
+      }
+   }
+   local ipv6_backends = {
+      {
+         name = "backend3",
+         addr = IPV6:pton("2001:db8:a0b:12f0::1"),
+         addr_len = 16,
+         health_check_type = godefs.HEALTH_CHECK_NONE
+      },
+      {
+         name = "backend4",
+         addr = IPV6:pton("2001:db8:a0b:12f0::2"),
+         addr_len = 16,
+         health_check_type = godefs.HEALTH_CHECK_NONE
+      }
+   }
+   local backends = {}
+   for _, b in ipairs(ipv4_backends) do
+      table.insert(backends, b)
+   end
+   for _, b in ipairs(ipv6_backends) do
+      table.insert(backends, b)
+   end
+
    local rewriting_config = {
       src_mac = self.network_config.spike_mac,
       dst_mac = self.network_config.router_mac,
@@ -130,7 +193,7 @@ function UnitTests:run()
    self.out_collect_app = engine.app_table["out_collect"]
    self.expected_collect_app = engine.app_table["expected_collect"]
 
-   self:run_test("single_ipv4_packet", {
+   self:run_test("single_packet_ipv4", {
       [1] = self.synthesis:make_in_packet_normal()
    }, {
       [1] = function(backend_addr)
@@ -138,7 +201,7 @@ function UnitTests:run()
             backend_addr = backend_addr
          })
       end
-   })
+   }, ipv4_backends)
 
    self:run_test("ipv4_fragments",
       self.synthesis:make_in_packets_redirected_ipv4_fragments(), {
@@ -147,7 +210,18 @@ function UnitTests:run()
             backend_addr = backend_addr
          })
       end
-   })
+   }, ipv4_backends)
+
+   self:run_test("single_packet_ipv6", {
+      [1] = self.synthesis:make_in_packet_normal()
+   }, {
+      [1] = function(backend_addr)
+         return self.synthesis:make_out_packet_normal({
+            outer_l3_prot = L3_IPV6,
+            backend_addr = backend_addr
+         })
+      end
+   }, ipv6_backends)
 end
 
 return UnitTests
