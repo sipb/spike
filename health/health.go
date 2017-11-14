@@ -7,12 +7,21 @@ import (
 	"time"
 )
 
+type HealthCheckType int
+
+const (
+	HEALTH_CHECK_NONE = iota
+	HEALTH_CHECK_HTTP
+)
+
 // CheckFun is a wrapper around Check using callback functions.
-func CheckFun(service string, onUp func(), onDown func(),
-	pollDelay time.Duration, httpTimeout time.Duration,
+func CheckFun(service string, healthCheckFunc func() bool,
+	onUp func(), onDown func(),
+	pollDelay time.Duration,
 	healthTimeout time.Duration, quit <-chan struct{}) {
 	updates := make(chan bool)
-	Check(service, pollDelay, httpTimeout, healthTimeout, updates, quit)
+	Check(service, healthCheckFunc, pollDelay,
+		healthTimeout, updates, quit)
 	go func() {
 		for {
 			up, ok := <-updates
@@ -36,20 +45,20 @@ func CheckFun(service string, onUp func(), onDown func(),
 // unhealthy (if it was not already so) when it is killed.
 func Check(
 	healthService string,
+	healthCheckFunc func() bool,
 	pollDelay time.Duration,
-	httpTimeout time.Duration,
 	healthTimeout time.Duration,
 	updates chan<- bool,
 	quit <-chan struct{},
 ) {
-	go check(healthService, pollDelay, httpTimeout,
+	go check(healthService, healthCheckFunc, pollDelay,
 		healthTimeout, updates, quit)
 }
 
 func check(
 	healthService string,
+	healthCheckFunc func() bool,
 	pollDelay time.Duration,
-	httpTimeout time.Duration,
 	healthTimeout time.Duration,
 	updates chan<- bool,
 	quit <-chan struct{},
@@ -63,30 +72,36 @@ func check(
 	}()
 
 	start := time.Now()
+
+	onTick := func() {
+		if healthCheckFunc() {
+			start = time.Now()
+			if !healthy {
+				healthy = true
+				updates <- true
+			}
+		} else if healthy && time.Now().After(start.Add(healthTimeout)) {
+			healthy = false
+			updates <- false
+		}
+	}
+
 	ticker := time.NewTicker(pollDelay)
 	defer ticker.Stop()
 
+	onTick()
 	for {
 		select {
 		case <-quit:
 			return
 		case <-ticker.C:
-			if health(healthService, httpTimeout) {
-				start = time.Now()
-				if !healthy {
-					healthy = true
-					updates <- true
-				}
-			} else if healthy && time.Now().After(start.Add(healthTimeout)) {
-				healthy = false
-				updates <- false
-			}
+			onTick()
 		}
 	}
 }
 
 // health checks the given health service
-func health(healthService string, httpTimeout time.Duration) bool {
+func HealthHttp(healthService string, httpTimeout time.Duration) bool {
 	client := http.Client{
 		Timeout: httpTimeout,
 	}

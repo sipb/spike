@@ -17,13 +17,17 @@ local GoInt = ffi.typeof("GoInt")
 
 local M = {}
 
+M.HEALTH_CHECK_NONE = 0
+M.HEALTH_CHECK_HTTP = 1
+
 function M.Init()
    return golib.Init()
 end
 
-function M.AddBackend(service, ip, ip_len)
+function M.AddBackend(service, ip, ip_len, health_check_type)
    return golib.AddBackend(GoString(service, #service),
-                           GoSlice(ip, ip_len, ip_len))
+                           GoSlice(ip, ip_len, ip_len),
+                           health_check_type)
 end
 
 function M.RemoveBackend(service)
