@@ -93,6 +93,21 @@ func AddBackend(service string, ip []byte, healthCheckType int) {
 	g.services[newService] = info
 }
 
+var healthCheckMap = map[string]int {
+	"none": healthCheckNone,
+	"http": healthCheckHTTP,
+}
+
+func AddBackendsFromConfig() {
+	for _, bCfg := range common.ReadConfig().Backends {
+		healthCheckType, ok := healthCheckMap[bCfg.HealthCheck]
+		if !ok {
+			panic("Unrecognized health check type in config " + bCfg.HealthCheck)
+		}
+		AddBackend(bCfg.Address, bCfg.Ip, healthCheckType)
+	}
+}
+
 // RemoveBackend removes a backend from the health checker.
 //
 //export RemoveBackend

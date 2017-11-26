@@ -23,6 +23,10 @@ function M.Init()
    return golib.Init()
 end
 
+function M.ReadConfig()
+   return golib.ReadConfig()
+end
+
 function M.AddBackend(service, ip, ip_len, health_check_type)
    return golib.AddBackend(GoString(service, #service),
                            GoSlice(ip, ip_len, ip_len),

@@ -11,13 +11,16 @@ var data = `
 backends:
     - address: http://cheesy-fries.mit.edu/health
       ip: [1,2,3,4]
+      healthcheck: none
     - address: http://strawberry-habanero.mit.edu/health
       ip: [5,6,7,8]
+      healthcheck: http
 `
 
 type BackendConfig struct {
 	Address string
 	Ip []byte
+	HealthCheck string
 }
 
 type Config struct {
@@ -34,6 +37,7 @@ func ReadConfig() Config {
 		log.Printf("Backend!")
 		log.Printf("  Address is %v", backend.Address)
 		log.Printf("  IP is %v", backend.Ip)
+		log.Printf("  Health check is %v", backend.HealthCheck)
 	}
 	return config
 }
