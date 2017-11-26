@@ -136,8 +136,10 @@ function PacketSynthesisContext:make_ip_header(config)
    local ip_header
    if l3_prot == L3_IPV6 then
       ip_header = IPV6:new({
-         src = config.src_addr or self.network_config.client_ipv6_addr,
-         dst = config.dst_addr or self.network_config.backend_vip_ipv6_addr,
+         src = config.src_ipv6_addr or config.src_addr or
+            self.network_config.client_ipv6_addr,
+         dst = config.dst_ipv6_addr or config.dst_addr or
+            self.network_config.backend_vip_ipv6_addr,
          next_header = config.inner_prot or config.l4_prot or L4_TCP,
          hop_limit = config.ttl or self.network_config.ttl or 30
       })
@@ -244,6 +246,8 @@ function PacketSynthesisContext:add_spike_to_backend_ip_header(config)
    self:add_ip_header(clone_table(config, {
       src_addr = config.spike_internal_addr or
          self.network_config.spike_internal_addr,
+      src_ipv6_addr = config.spike_internal_ipv6_addr or
+         self.network_config.spike_internal_ipv6_addr,
       dst_addr = config.backend_addr
    }))
 end
@@ -339,7 +343,7 @@ function PacketSynthesisContext:make_in_packets_redirected_ipv4_fragments(
       end
       -- fragment offset field is units of 8-byte blocks
       local frag_len = string.len(fragments[i])
-      local frag_off = curr_offset / 8 
+      local frag_off = curr_offset / 8
       packets[i] = self:make_in_packet_redirected_ipv4_fragment(
          clone_table(config, {
             payload = fragments[i],
@@ -359,12 +363,15 @@ function PacketSynthesisContext:make_out_packet_normal(config)
    self:add_payload(config)
    self:add_tcp_ip_headers(config)
    self:add_gre_header(config)
+   local l3_prot = config.outer_l3_prot or config.l3_prot
    self:add_spike_to_backend_ip_header(clone_table(config, {
+      l3_prot = l3_prot,
       inner_prot = L4_GRE
    }))
    self:add_ethernet_header(clone_table(config, {
       src_mac = self.network_config.spike_mac,
-      dst_mac = self.network_config.router_mac
+      dst_mac = self.network_config.router_mac,
+      l3_prot = l3_prot
    }))
    return self:get_packet()
 end

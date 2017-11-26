@@ -3,6 +3,7 @@ local L = require("core.link")
 local Datagram = require("lib.protocol.datagram")
 local Ethernet = require("lib.protocol.ethernet")
 local IPV4 = require("lib.protocol.ipv4")
+local IPV6 = require("lib.protocol.ipv6")
 local GRE = require("lib.protocol.gre")
 local TCP = require("lib.protocol.tcp")
 local bit = require("bit")
@@ -36,12 +37,6 @@ local Rewriting = {}
 -- ttl (int, default 30) -- the TTL to set on outgoing packets
 function Rewriting:new(opts)
    local ipv4_addr, ipv6_addr, err
-   if opts.ipv4_addr and opts.ipv6_addr then
-      error("cannot specify both ipv4 and ipv6")
-   end
-   if not opts.ipv4_addr and not opts.ipv6_addr then
-      error("need to specify either ipv4addr or ipv6addr")
-   end
    if opts.ipv4_addr then
       ipv4_addr, err = IPV4:pton(opts.ipv4_addr)
       if not ipv4_addr then
@@ -53,7 +48,6 @@ function Rewriting:new(opts)
       if not ipv6_addr then
          error(err)
       end
-      error("ipv6 not yet implemented")
    end
    if not opts.dst_mac then
       error("need to specify dst_mac")
@@ -204,11 +198,7 @@ function Rewriting:process_packet(i, o)
       P.free(p)
       return
    end
-   if backend_len == 16 then
-      error("ipv6 output not implemented")
-   elseif backend_len ~= 4 then
-      error("backend length must be 4 (for ipv4) or 16 (for ipv6)")
-   end
+
 
    -- unparse L4 and L3
    datagram:unparse(2)
@@ -216,19 +206,40 @@ function Rewriting:process_packet(i, o)
    local gre_header = GRE:new({protocol = l3_type})
    datagram:push(gre_header)
 
-   local outer_ip_header = IPV4:new({src = self.ipv4_addr,
-                                     dst = backend,
-                                     protocol = L4_GRE,
-                                     ttl = self.ttl})
-   outer_ip_header:total_length(
-      ip_total_length + gre_header:sizeof() + outer_ip_header:sizeof())
-   -- need to recompute checksum after changing total_length
-   outer_ip_header:checksum()
+
+   local outer_ip_header, outer_l3_type
+   if backend_len == 4 then -- IPv4
+      if self.ipv4_addr == nil then
+         error("Spike's IPv4 address not specified.")
+      end
+      outer_l3_type = L3_IPV4
+      outer_ip_header = IPV4:new({src = self.ipv4_addr,
+                                        dst = backend,
+                                        protocol = L4_GRE,
+                                        ttl = self.ttl})
+      outer_ip_header:total_length(
+         ip_total_length + gre_header:sizeof() + outer_ip_header:sizeof())
+      -- need to recompute checksum after changing total_length
+      outer_ip_header:checksum()
+   elseif backend_len == 16 then -- IPv6
+      if self.ipv6_addr == nil then
+         error("Spike's IPv6 address not specified.")
+      end
+      outer_l3_type = L3_IPV6
+      outer_ip_header = IPV6:new({src= self.ipv6_addr,
+                                        dst = backend,
+                                        next_header = L4_GRE,
+                                        hop_limit = self.ttl})
+      outer_ip_header:payload_length(ip_total_length + gre_header:sizeof())
+   else
+      error("backend length must be 4 (for IPv4) or 16 (for IPv6)")
+   end
+
    datagram:push(outer_ip_header)
 
    local outer_eth_header = Ethernet:new({src = self.src_mac or eth_dst,
                                           dst = self.dst_mac,
-                                          type = L3_IPV4})
+                                          type = outer_l3_type})
    datagram:push(outer_eth_header)
 
    datagram:commit()

@@ -7,21 +7,13 @@ import (
 	"time"
 )
 
-type HealthCheckType int
-
-const (
-	HEALTH_CHECK_NONE = iota
-	HEALTH_CHECK_HTTP
-)
-
 // CheckFun is a wrapper around Check using callback functions.
 func CheckFun(service string, healthCheckFunc func() bool,
 	onUp func(), onDown func(),
 	pollDelay time.Duration,
 	healthTimeout time.Duration, quit <-chan struct{}) {
 	updates := make(chan bool)
-	Check(service, healthCheckFunc, pollDelay,
-		healthTimeout, updates, quit)
+	Check(healthCheckFunc, pollDelay, healthTimeout, updates, quit)
 	go func() {
 		for {
 			up, ok := <-updates
@@ -44,19 +36,17 @@ func CheckFun(service string, healthCheckFunc func() bool,
 // Check assumes that the backend is unhealthy initially, and becomes
 // unhealthy (if it was not already so) when it is killed.
 func Check(
-	healthService string,
 	healthCheckFunc func() bool,
 	pollDelay time.Duration,
 	healthTimeout time.Duration,
 	updates chan<- bool,
 	quit <-chan struct{},
 ) {
-	go check(healthService, healthCheckFunc, pollDelay,
+	go check(healthCheckFunc, pollDelay,
 		healthTimeout, updates, quit)
 }
 
 func check(
-	healthService string,
 	healthCheckFunc func() bool,
 	pollDelay time.Duration,
 	healthTimeout time.Duration,
@@ -100,8 +90,9 @@ func check(
 	}
 }
 
-// health checks the given health service
-func HealthHttp(healthService string, httpTimeout time.Duration) bool {
+// HTTP performs a health check by searching for the string "healthy" in
+// the HTTP response body
+func HTTP(healthService string, httpTimeout time.Duration) bool {
 	client := http.Client{
 		Timeout: httpTimeout,
 	}
