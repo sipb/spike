@@ -52,7 +52,7 @@ func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 func main() {
 	const lookupSizeM = 11
 
-	config := common.ReadConfig()
+	config := common.ReadConfig("http.yaml")
 
 	backends := map[string]*serviceInfo{}
 	for _, bCfg := range config.Backends {

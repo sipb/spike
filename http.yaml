@@ -1,0 +1,7 @@
+backends:
+    - address: http://cheesy-fries.mit.edu/health
+      ip: [1, 3, 5, 7]
+      healthcheck: http
+    - address: http://strawberry-habanero.mit.edu/health
+      ip: [2, 4, 6, 8]
+      healthcheck: http

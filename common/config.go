@@ -4,18 +4,9 @@ package common
 
 import (
 	"log"
+	"io/ioutil"
 	"gopkg.in/yaml.v2"
 )
-
-var data = `
-backends:
-    - address: http://cheesy-fries.mit.edu/health
-      ip: [1,2,3,4]
-      healthcheck: none
-    - address: http://strawberry-habanero.mit.edu/health
-      ip: [5,6,7,8]
-      healthcheck: http
-`
 
 type BackendConfig struct {
 	Address string
@@ -27,9 +18,13 @@ type Config struct {
 	Backends []BackendConfig
 }
 
-func ReadConfig() Config {
+func ReadConfig(file string) Config {
 	var config Config
-	err := yaml.Unmarshal([]byte(data), &config)
+	dat, err := ioutil.ReadFile(file)
+	if err != nil {
+		log.Fatal("Cannot read config file: %v", file)
+	}
+	err = yaml.Unmarshal(dat, &config)
 	if err != nil {
 		log.Fatal("Cannot unmarshal config yaml: %v", err)
 	}

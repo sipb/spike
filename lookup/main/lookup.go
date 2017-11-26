@@ -98,8 +98,8 @@ var healthCheckMap = map[string]int {
 	"http": healthCheckHTTP,
 }
 
-func AddBackendsFromConfig() {
-	for _, bCfg := range common.ReadConfig().Backends {
+func AddBackendsFromConfig(file string) {
+	for _, bCfg := range common.ReadConfig(file).Backends {
 		healthCheckType, ok := healthCheckMap[bCfg.HealthCheck]
 		if !ok {
 			panic("Unrecognized health check type in config " + bCfg.HealthCheck)

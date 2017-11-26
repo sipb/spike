@@ -12,10 +12,7 @@ local function runmain()
    end
 
    godefs.Init()
-   godefs.AddBackend("http://cheesy-fries.mit.edu/health",
-                     IPV4:pton("1.3.5.7"), 4, godefs.HEALTH_CHECK_HTTP)
-   godefs.AddBackend("http://strawberry-habanero.mit.edu/health",
-                     IPV4:pton("2.4.6.8"), 4, godefs.HEALTH_CHECK_HTTP)
+   godefs.AddBackendsFromConfig("http.yaml")
    C.usleep(3000000) -- wait for backends to come up for demo
    local src_mac, dst_mac, ipv4_addr, incap, outcap = unpack(main.parameters)
 
