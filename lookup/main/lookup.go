@@ -14,6 +14,11 @@ import (
 	"github.com/sipb/spike/tracking"
 )
 
+const (
+	healthCheckNone = iota
+	healthCheckHTTP
+)
+
 type serviceInfo struct {
 	ip   []byte
 	quit chan<- struct{}
@@ -55,13 +60,13 @@ func AddBackend(service string, ip []byte, healthCheckType int) {
 
 	var healthCheckFunc func() bool
 	switch healthCheckType {
-	case health.HEALTH_CHECK_NONE:
+	case healthCheckNone:
 		healthCheckFunc = func() bool {
 			return true
 		}
-	case health.HEALTH_CHECK_HTTP:
+	case healthCheckHTTP:
 		healthCheckFunc = func() bool {
-			return health.HealthHttp(newService, 2*time.Second)
+			return health.HTTP(newService, 2*time.Second)
 		}
 	default:
 		panic("Unrecognized health check type")
