@@ -72,7 +72,7 @@ func AddBackend(service string, ip []byte, healthCheckType int) {
 		panic("Unrecognized health check type")
 	}
 
-	health.CheckFun(newService, healthCheckFunc,
+	health.CheckFun(healthCheckFunc,
 		func() {
 			down := make(chan struct{})
 			backend := &common.Backend{

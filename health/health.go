@@ -8,7 +8,7 @@ import (
 )
 
 // CheckFun is a wrapper around Check using callback functions.
-func CheckFun(service string, healthCheckFunc func() bool,
+func CheckFun(healthCheckFunc func() bool,
 	onUp func(), onDown func(),
 	pollDelay time.Duration,
 	healthTimeout time.Duration, quit <-chan struct{}) {

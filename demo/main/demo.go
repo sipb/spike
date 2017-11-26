@@ -27,7 +27,7 @@ func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 	info.quit = quit
 	backends := make(chan *common.Backend, 1)
 
-	health.CheckFun(service, func() bool {
+	health.CheckFun(func() bool {
 		return health.HTTP(service, 2*time.Second)
 	},
 		func() {
