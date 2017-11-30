@@ -5,6 +5,7 @@ local P = require("apps.pcap.pcap")
 local IPV4 = require("lib.protocol.ipv4")
 local IPV6 = require("lib.protocol.ipv6")
 local Datagram = require("lib.protocol.datagram")
+local Counter = require("core.counter")
 
 local Rewriting = require("rewriting")
 local godefs = require("godefs")
@@ -37,7 +38,11 @@ end
 -- output_generators (array of functions) -- Generators that produce
 --    the expected output from Spike. These are functions that take
 --    in the backend IP address and produce a packet.
-function UnitTests:run_test(test_name, input_packets, output_generators, backends)
+function UnitTests:run_test(test_name, input_packets, output_generators, backends, max_num_breaths)
+   if max_num_breaths == nil then
+      max_num_breaths = 10
+   end
+
    print("Running test: "..test_name)
    self.stream_app:init(input_packets)
 
@@ -47,22 +52,22 @@ function UnitTests:run_test(test_name, input_packets, output_generators, backend
    local expected_num_output_packets = #output_generators
 
    local err = nil
-   local test_start_time = os.clock()
-   local flush_counter = -1
+   local flush_start_num_breaths = -1
+   local start_num_breaths = Counter.read(engine.breaths)
    engine.main({done = function()
-      if os.clock() - test_start_time > 0.1 then
-         err = "Test timed out. Possibly too many packets were dropped."
+      local curr_num_breaths = Counter.read(engine.breaths)
+      if curr_num_breaths - start_num_breaths > max_num_breaths then
+         err = "Too many packets were dropped."
          return true
       end
 
-      if flush_counter ~= -1 then
+      if flush_start_num_breaths ~= -1 then
          if #self.out_collect_app.packets ~=
             expected_num_output_packets then
             err = "Too may packets produced."
             return true
          end
-         flush_counter = flush_counter - 1
-         return flush_counter == 0
+         return curr_num_breaths - flush_start_num_breaths > 3
       end
 
       -- Wait for packets to be flushed to pcap.
@@ -70,8 +75,10 @@ function UnitTests:run_test(test_name, input_packets, output_generators, backend
          expected_num_output_packets and
          #self.expected_collect_app.packets ==
          expected_num_output_packets then
-         flush_counter = 5
+         flush_start_num_breaths = curr_num_breaths
       end
+
+      return false
    end, no_report = true})
    if self.expected_output_generator_app.err then
       err = self.expected_output_generator_app.err
