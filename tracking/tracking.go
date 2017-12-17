@@ -12,7 +12,7 @@ type entry struct {
 }
 
 // Cache is a connection-tracking table.  It lazily evicts entries when
-// the backend becomes unhealthy or when the entry expires by not been
+// the backend becomes unhealthy or when the entry expires by not being
 // accessed.
 //
 // Cache is not thread-safe.
