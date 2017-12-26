@@ -33,11 +33,5 @@ func ReadConfig(file string) Config {
 	if err != nil {
 		log.Fatal("Cannot unmarshal config yaml: %v", err)
 	}
-	for _, backend := range config.Backends {
-		log.Printf("Backend!")
-		log.Printf("  Address is %v", backend.Address)
-		log.Printf("  IP is %v", backend.Ip)
-		log.Printf("  Health check is %v", backend.HealthCheck)
-	}
 	return config
 }
