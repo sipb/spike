@@ -16,6 +16,11 @@ type BackendConfig struct {
 
 type Config struct {
 	Backends []BackendConfig
+	SrcMac string
+	DstMac string
+	Ipv4Address string
+	Incap string
+	Outcap string
 }
 
 func ReadConfig(file string) Config {

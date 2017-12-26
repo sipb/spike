@@ -98,14 +98,39 @@ var healthCheckMap = map[string]int {
 	"http": healthCheckHTTP,
 }
 
-func AddBackendsFromConfig(file string) {
-	for _, bCfg := range common.ReadConfig(file).Backends {
+func AddBackendsFromConfig(file string) common.Config {
+	cfg := common.ReadConfig(file)
+	for _, bCfg := range cfg.Backends {
 		healthCheckType, ok := healthCheckMap[bCfg.HealthCheck]
 		if !ok {
 			panic("Unrecognized health check type in config " + bCfg.HealthCheck)
 		}
 		AddBackend(bCfg.Address, bCfg.Ip, healthCheckType)
 	}
+	return cfg
+}
+
+// The common.Config return value can't be exported so unfortunately we need a
+// separate function.
+
+//export AddBackendsFromConfigVoid
+func AddBackendsFromConfigVoid(file string) {
+	AddBackendsFromConfig(file)
+}
+
+// Since Go is garbage-collected and we want to export this function and have
+// Spike (Lua code, effectively C FFI for our concerns) call it to get config
+// args, we have to explicitly convert our return values to C strings
+// explicitly that aren't GC'd (Go does a runtime check and panics if we try to
+// return Go pointers or similar, including Go strings). It's not pretty.
+
+// Also I don't think Go FFI can export Go structs yet, so we're just returning
+// five unnamed values at once...
+
+//export AddBackendsAndGetSpikeConfig
+func AddBackendsAndGetSpikeConfig(file string) (*C.char, *C.char, *C.char, *C.char, *C.char) {
+	cfg := AddBackendsFromConfig(file)
+	return C.CString(cfg.SrcMac), C.CString(cfg.DstMac), C.CString(cfg.Ipv4Address), C.CString(cfg.Incap), C.CString(cfg.Outcap)
 }
 
 // RemoveBackend removes a backend from the health checker.
