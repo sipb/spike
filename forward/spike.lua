@@ -11,10 +11,6 @@ void free(void *ptr);
 ]]
 
 local function runmain()
-   -- if #main.parameters ~= 5 then
-   --    print("Usage: spike src_mac dst_mac ipv4_addr in.pcap out.pcap")
-   --    os.exit(1)
-   -- end
 
    godefs.Init()
    local spike_args = godefs.AddBackendsAndGetSpikeConfig("http.yaml")
@@ -24,7 +20,6 @@ local function runmain()
    local ipv4_addr = ffi.string(spike_args.r2); ffi.C.free(spike_args.r2)
    local incap     = ffi.string(spike_args.r3); ffi.C.free(spike_args.r3)
    local outcap    = ffi.string(spike_args.r4); ffi.C.free(spike_args.r4)
-   -- local src_mac, dst_mac, ipv4_addr, incap, outcap = unpack(main.parameters)
 
    local c = config.new()
    config.app(c, "source", P.PcapReader, incap)
