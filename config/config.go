@@ -1,30 +1,30 @@
-package common
+package config
 
 // Read configuration stuff from a yaml file.
 
 import (
-	"log"
-	"io/ioutil"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"log"
 )
 
-type BackendConfig struct {
-	Address string
-	Ip []byte
+type Backend struct {
+	Address     string
+	IP          []byte
 	HealthCheck string
 }
 
-type Config struct {
-	Backends []BackendConfig
-	SrcMac string
-	DstMac string
-	Ipv4Address string
-	Incap string
-	Outcap string
+type T struct {
+	Backends    []Backend
+	SrcMac      string
+	DstMac      string
+	IPv4Address string
+	Incap       string
+	Outcap      string
 }
 
-func ReadConfig(file string) Config {
-	var config Config
+func Read(file string) T {
+	var config T
 	dat, err := ioutil.ReadFile(file)
 	if err != nil {
 		log.Fatal("Cannot read config file: %v", file)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipb/spike/common"
+	"github.com/sipb/spike/config"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
 	"github.com/sipb/spike/tracking"
@@ -98,14 +99,14 @@ var healthCheckMap = map[string]int {
 	"http": healthCheckHTTP,
 }
 
-func AddBackendsFromConfig(file string) common.Config {
-	cfg := common.ReadConfig(file)
+func AddBackendsFromConfig(file string) config.T {
+	cfg := config.Read(file)
 	for _, bCfg := range cfg.Backends {
 		healthCheckType, ok := healthCheckMap[bCfg.HealthCheck]
 		if !ok {
 			panic("Unrecognized health check type in config " + bCfg.HealthCheck)
 		}
-		AddBackend(bCfg.Address, bCfg.Ip, healthCheckType)
+		AddBackend(bCfg.Address, bCfg.IP, healthCheckType)
 	}
 	return cfg
 }
@@ -130,7 +131,7 @@ func AddBackendsFromConfigVoid(file string) {
 //export AddBackendsAndGetSpikeConfig
 func AddBackendsAndGetSpikeConfig(file string) (*C.char, *C.char, *C.char, *C.char, *C.char) {
 	cfg := AddBackendsFromConfig(file)
-	return C.CString(cfg.SrcMac), C.CString(cfg.DstMac), C.CString(cfg.Ipv4Address), C.CString(cfg.Incap), C.CString(cfg.Outcap)
+	return C.CString(cfg.SrcMac), C.CString(cfg.DstMac), C.CString(cfg.IPv4Address), C.CString(cfg.Incap), C.CString(cfg.Outcap)
 }
 
 // RemoveBackend removes a backend from the health checker.

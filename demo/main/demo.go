@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sipb/spike/common"
+	"github.com/sipb/spike/config"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
 	"github.com/sipb/spike/tracking"
@@ -52,11 +53,11 @@ func startChecker(mm *maglev.Table, service string, info *serviceInfo) {
 func main() {
 	const lookupSizeM = 11
 
-	config := common.ReadConfig("http.yaml")
+	config := config.Read("http.yaml")
 
 	backends := map[string]*serviceInfo{}
 	for _, bCfg := range config.Backends {
-		backends[bCfg.Address] = &serviceInfo{bCfg.Ip, nil}
+		backends[bCfg.Address] = &serviceInfo{bCfg.IP, nil}
 	}
 
 	mm := maglev.New(lookupSizeM)
