@@ -1,23 +1,25 @@
 local B = require("apps.basic.basic_apps")
 local P = require("apps.pcap.pcap")
-local C = require("ffi").C
+local ffi = require("ffi")
+local C = ffi.C
 local Rewriting = require("rewriting")
 local godefs = require("godefs")
 local IPV4 = require("lib.protocol.ipv4")
 
+ffi.cdef[[
+void free(void *ptr);
+]]
+
 local function runmain()
-   if #main.parameters ~= 5 then
-      print("Usage: spike src_mac dst_mac ipv4_addr in.pcap out.pcap")
-      os.exit(1)
-   end
 
    godefs.Init()
-   godefs.AddBackend("http://cheesy-fries.mit.edu/health",
-                     IPV4:pton("1.3.5.7"), 4, godefs.HEALTH_CHECK_HTTP)
-   godefs.AddBackend("http://strawberry-habanero.mit.edu/health",
-                     IPV4:pton("2.4.6.8"), 4, godefs.HEALTH_CHECK_HTTP)
+   local spike_args = godefs.AddBackendsAndGetSpikeConfig("http.yaml")
    C.usleep(3000000) -- wait for backends to come up for demo
-   local src_mac, dst_mac, ipv4_addr, incap, outcap = unpack(main.parameters)
+   local src_mac   = ffi.string(spike_args.r0); ffi.C.free(spike_args.r0)
+   local dst_mac   = ffi.string(spike_args.r1); ffi.C.free(spike_args.r1)
+   local ipv4_addr = ffi.string(spike_args.r2); ffi.C.free(spike_args.r2)
+   local incap     = ffi.string(spike_args.r3); ffi.C.free(spike_args.r3)
+   local outcap    = ffi.string(spike_args.r4); ffi.C.free(spike_args.r4)
 
    local c = config.new()
    config.app(c, "source", P.PcapReader, incap)

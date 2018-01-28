@@ -6,10 +6,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sipb/spike/common"
+	"github.com/sipb/spike/config"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
 	"github.com/sipb/spike/tracking"
@@ -52,39 +54,34 @@ func startChecker(mm *maglev.Table, name string, info *backendInfo) {
 }
 
 func main() {
-	const lookupSizeM = 11
-	type pool struct{
+	type pool struct {
 		info  map[string]*backendInfo
 		table *maglev.Table
 	}
 
+	config, err := config.Read("config.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
 	pools := make(map[[16]byte]pool)
-	var ip0, ip1 [16]byte
-	for i, x := range net.ParseIP("18.18.18.18").To16() {
-		ip0[i] = x
-	}
-	for i, x := range net.ParseIP("18.18.18.19").To16() {
-		ip1[i] = x
-	}
-	pools[ip0] = pool{
-		map[string]*backendInfo{
-			"cheesy-fries": &backendInfo{
-				[]byte{1, 2, 3, 4}, nil, "http://cheesy-fries.mit.edu/health"},
-			"strawberry-habanero": &backendInfo{
-				[]byte{5, 6, 7, 8}, nil, "http://strawberry-habanero.mit.edu/health"},
-			"powerful-motor": &backendInfo{
-				[]byte{9, 10, 11, 12}, nil, ""},
-		},
-		maglev.New(lookupSizeM),
-	}
-	pools[ip1] = pool{
-		map[string]*backendInfo{
-			"godel": &backendInfo{
-				[]byte{1, 0, 0, 1}, nil, ""},
-			"lob": &backendInfo{
-				[]byte{1, 1, 0, 0}, nil, ""},
-		},
-		maglev.New(lookupSizeM),
+	for _, p := range config.Pools {
+		var vip [16]byte
+		for i, x := range net.ParseIP(p.VIP).To16() {
+			vip[i] = x
+		}
+		backends := make(map[string]*backendInfo)
+		for _, b := range p.Backends {
+			backends[b.Name] = &backendInfo{
+				net.ParseIP(b.IP),
+				nil,
+				// FIXME restructure backendInfo for healthchecks
+				b.HealthCheck.HTTPAddr,
+			}
+		}
+		pools[vip] = pool{
+			backends,
+			maglev.New(p.MaglevSize),
+		}
 	}
 
 	tt := tracking.New(func(f common.FiveTuple) (*common.Backend, bool) {
@@ -129,6 +126,7 @@ func main() {
 		case "help":
 			fmt.Println("commands:")
 			fmt.Println("help")
+			fmt.Println("addpool pool size")
 			fmt.Println("addbackend pool name IP [healthService]")
 			fmt.Println("rmbackend pool name")
 			fmt.Println("list")
@@ -156,6 +154,31 @@ func main() {
 			}
 			close(info.quit)
 			delete(p.info, words[2])
+		case "addpool":
+			if len(words) != 3 {
+				fmt.Println("?")
+				continue
+			}
+			paddr := net.ParseIP(words[1]).To16()
+			if paddr == nil {
+				fmt.Println("invalid pool address")
+				continue
+			}
+			paddr_a := common.AddrTo16(paddr)
+			size, err := strconv.Atoi(words[2])
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			p := pool{
+				make(map[string]*backendInfo),
+				maglev.New(uint64(size)),
+			}
+			if _, ok := pools[paddr_a]; ok {
+				fmt.Println("pool exists")
+				continue
+			}
+			pools[paddr_a] = p
 		case "addbackend":
 			if len(words) == 4 {
 				words = append(words, "")
@@ -172,11 +195,8 @@ func main() {
 			paddr_a := common.AddrTo16(paddr)
 			p, ok := pools[paddr_a]
 			if !ok {
-				p = pool{
-					make(map[string]*backendInfo),
-					maglev.New(lookupSizeM),
-				}
-				pools[paddr_a] = p
+				fmt.Println("no such pool")
+				continue
 			}
 			if _, ok := p.info[words[2]]; ok {
 				fmt.Println("backend already exists")

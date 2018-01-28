@@ -1,6 +1,6 @@
 .PHONY: all clean test
 
-LIBFILES := $(shell find common health maglev tracking -name '*.go')
+LIBFILES := $(shell find common config health maglev tracking -name '*.go')
 
 all: bin/demo lookup.so lookup_processed.h
 
@@ -17,4 +17,4 @@ lookup_processed.h: lookup.h
 	gcc -E $< | grep -v '^#' >$@
 
 clean:
-	rm -f bin/demo lookup.so lookup.h
+	rm -f bin/demo lookup.so lookup.h lookup_processed.h

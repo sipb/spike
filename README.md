@@ -12,6 +12,7 @@ load balancer, [Maglev][0].
 * [`siphash`](https://github.com/dchest/siphash)
 * [`snabb`](https://github.com/snabbco/snabb)
 * [`testify`](https://github.com/stretchr/testify)
+* [`yaml`](https://github.com/go-yaml/yaml)
 
 # Building
 
@@ -20,7 +21,7 @@ load balancer, [Maglev][0].
   `$GOPATH/src/github.com/sipb/spike`.
 * Clone and build the [snabb repository](https://github.com/snabbco/snabb).
   (This is unlikely to work on non-Linux operating systems.)
-* Run `go get github.com/dchest/siphash github.com/stretchr/testify`.
+* Run `go get github.com/dchest/siphash github.com/stretchr/testify gopkg.in/yaml.v2`.
 * Run `make`.
 
 It should now be possible to run the health check demo (`bin/demo`), as

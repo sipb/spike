@@ -30,6 +30,14 @@ function M.AddBackend(service, ip, ip_len, health_check_type)
                            health_check_type)
 end
 
+function M.AddBackendsFromConfig(config_file)
+   return golib.AddBackendsFromConfigVoid(GoString(config_file, #config_file))
+end
+
+function M.AddBackendsAndGetSpikeConfig(config_file)
+   return golib.AddBackendsAndGetSpikeConfig(GoString(config_file, #config_file))
+end
+
 function M.RemoveBackend(service)
    return golib.RemoveBackend(GoString(service, #service))
 end

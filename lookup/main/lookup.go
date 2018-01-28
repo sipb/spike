@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipb/spike/common"
+	"github.com/sipb/spike/config"
 	"github.com/sipb/spike/health"
 	"github.com/sipb/spike/maglev"
 	"github.com/sipb/spike/tracking"
@@ -19,14 +20,14 @@ const (
 	healthCheckHTTP
 )
 
-type serviceInfo struct {
+type backendInfo struct {
 	ip   []byte
 	quit chan<- struct{}
 }
 
 type globals struct {
-	services     map[string]*serviceInfo
-	servicesLock sync.RWMutex
+	backends     map[string]*backendInfo
+	backendsLock sync.RWMutex
 	tracker      *tracking.Cache
 	maglev       *maglev.Table
 }
@@ -38,10 +39,13 @@ var g globals
 //
 //export Init
 func Init() {
-	g.services = make(map[string]*serviceInfo)
+	g.backends = make(map[string]*backendInfo)
 	g.maglev = maglev.New(maglev.SmallM)
 	g.tracker = tracking.New(g.maglev.Lookup5, 15*time.Minute)
 }
+
+// FIXME probably want to just remove this and have the interface be
+// "set from a config"
 
 // AddBackend adds a new backend to the health checker.
 //
@@ -56,7 +60,7 @@ func AddBackend(service string, ip []byte, healthCheckType int) {
 
 	backends := make(chan *common.Backend, 1)
 	quit := make(chan struct{})
-	info := &serviceInfo{newIP, quit}
+	info := &backendInfo{newIP, quit}
 
 	var healthCheckFunc func() bool
 	switch healthCheckType {
@@ -88,23 +92,56 @@ func AddBackend(service string, ip []byte, healthCheckType int) {
 			g.maglev.Remove(backend)
 		},
 		time.Second, 5*time.Second, quit)
-	g.servicesLock.Lock()
-	defer g.servicesLock.Unlock()
-	g.services[newService] = info
+	g.backendsLock.Lock()
+	defer g.backendsLock.Unlock()
+	g.backends[newService] = info
+}
+
+var healthCheckMap = map[string]int {
+	"none": healthCheckNone,
+	"http": healthCheckHTTP,
+}
+
+// Since Go is garbage-collected and we want to export this function and
+// have Spike (Lua code, effectively C FFI for our concerns) call it to
+// get config args, we have to explicitly convert our return values to C
+// strings explicitly that aren't GC'd (Go does a runtime check and
+// panics if we try to return Go pointers or similar, including Go
+// strings).
+//
+// Also, Go FFI cannot export Go structs, so we're just returning
+// several unnamed values at once.
+//
+//export AddBackendsAndGetSpikeConfig
+func LoadConfig(file string) (*C.char, *C.char, *C.char) {
+	cfg, err := config.Read(file)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, bCfg := range cfg.Backends {
+		healthCheckType, ok := healthCheckMap[bCfg.HealthCheck]
+		if !ok {
+			panic("Unrecognized health check type in config " + bCfg.HealthCheck)
+		}
+		AddBackend(bCfg.Address, bCfg.IP, healthCheckType)
+	}
+
+	return C.CString(cfg.SrcMAC), C.CString(cfg.DstMAC), C.CString(cfg.SrcIP)
 }
 
 // RemoveBackend removes a backend from the health checker.
 //
 //export RemoveBackend
 func RemoveBackend(service string) {
-	g.servicesLock.Lock()
-	defer g.servicesLock.Unlock()
-	info, ok := g.services[service]
+	g.backendsLock.Lock()
+	defer g.backendsLock.Unlock()
+	info, ok := g.backends[service]
 	if !ok {
 		return
 	}
 	close(info.quit)
-	delete(g.services, service)
+	delete(g.backends, service)
 }
 
 // Lookup determines the backend associated with a five-tuple.  It
