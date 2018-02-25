@@ -1,6 +1,7 @@
 package health
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -31,7 +32,7 @@ func MakeChecker(d Def) Checker {
 			d.Timeout,
 		)
 	}
-	panic("bad type in health definition")
+	panic(fmt.Sprintf("bad type %v in health definition", d.Type))
 }
 
 type Checker interface {

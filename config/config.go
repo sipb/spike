@@ -3,15 +3,16 @@ package config
 // Read configuration from a yaml file.
 
 import (
+	"fmt"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 )
 
 type HealthCheck struct {
-	// Valid types are "", "http"
+	// valid types are "none", "http"
 	Type string
 
-	// HTTP only
+	// only for type "http"
 	HTTPAddr string `yaml:"http address"`
 }
 
@@ -54,6 +55,20 @@ func Read(file string) (*T, error) {
 	}
 	if err = yaml.Unmarshal(dat, &config); err != nil {
 		return nil, err
+	}
+	if config.Input.Type != "pcap" {
+		panic(fmt.Sprintf("bad input type %v", config.Input.Type))
+	}
+	if config.Output.Type != "pcap" {
+		panic(fmt.Sprintf("bad output type %v", config.Output.Type))
+	}
+	for _, p := range config.Pools {
+		for _, b := range p.Backends {
+			if b.HealthCheck.Type != "none" && b.HealthCheck.Type != "http" {
+				panic(fmt.Sprintf("backend %v: bad health check type %v",
+					b.Name, b.HealthCheck.Type))
+			}
+		}
 	}
 	return &config, nil
 }

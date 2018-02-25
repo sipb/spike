@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -17,23 +19,29 @@ import (
 	"github.com/sipb/spike/tracking"
 )
 
+const debugGoroutines bool = false
+
+const (
+	healthDelay    time.Duration = 2 * time.Second
+	healthTimeout                = 5 * time.Second
+	httpTimeout                  = time.Second
+	trackingExpiry               = 10 * time.Second
+)
+
 type backendInfo struct {
-	ip            []byte
-	quit          chan<- struct{}
-	healthService string
+	ip []byte
+
+	health  health.Def
+	checker health.Checker
 }
 
-func startChecker(mm *maglev.Table, name string, info *backendInfo) {
-	quit := make(chan struct{})
-	info.quit = quit
+// requires that info.ip and info.health are filled in already
+func initHealth(mm *maglev.Table, name string, info *backendInfo) {
 	backends := make(chan *common.Backend, 1)
 
-	health.CheckFun(func() bool {
-		if info.healthService == "" {
-			return true
-		}
-		return health.HTTP(info.healthService, 2*time.Second)
-	},
+	info.checker = health.MakeChecker(info.health)
+	go info.checker.Start()
+	go health.Callback(info.checker,
 		func() {
 			log.Printf("backend %v is healthy\n", name)
 			down := make(chan struct{})
@@ -50,10 +58,21 @@ func startChecker(mm *maglev.Table, name string, info *backendInfo) {
 			close(backend.Unhealthy)
 			mm.Remove(backend)
 		},
-		time.Second, 5*time.Second, quit)
+	)
 }
 
 func main() {
+	if debugGoroutines {
+		// dump goroutine info on interrupt
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		go func() {
+			<-c
+			pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+			os.Exit(130)
+		}()
+	}
+
 	type pool struct {
 		info  map[string]*backendInfo
 		table *maglev.Table
@@ -72,10 +91,16 @@ func main() {
 		backends := make(map[string]*backendInfo)
 		for _, b := range p.Backends {
 			backends[b.Name] = &backendInfo{
-				net.ParseIP(b.IP),
-				nil,
-				// FIXME restructure backendInfo for healthchecks
-				b.HealthCheck.HTTPAddr,
+				ip: net.ParseIP(b.IP),
+				health: health.Def{
+					Type: b.HealthCheck.Type,
+
+					Delay:   healthDelay,
+					Timeout: healthTimeout,
+
+					HTTPAddr:    b.HealthCheck.HTTPAddr,
+					HTTPTimeout: httpTimeout,
+				},
 			}
 		}
 		pools[vip] = pool{
@@ -90,11 +115,11 @@ func main() {
 			return nil, false
 		}
 		return z.table.Lookup5(f)
-	}, 10*time.Second)
+	}, trackingExpiry)
 
 	for _, pool := range pools {
 		for name, info := range pool.info {
-			startChecker(pool.table, name, info)
+			initHealth(pool.table, name, info)
 		}
 	}
 
@@ -152,7 +177,7 @@ func main() {
 				fmt.Println("no such backend")
 				continue
 			}
-			close(info.quit)
+			info.checker.Stop()
 			delete(p.info, words[2])
 		case "addpool":
 			if len(words) != 3 {
@@ -207,8 +232,21 @@ func main() {
 				fmt.Println("invalid backend address")
 				continue
 			}
-			info := &backendInfo{addr, nil, words[4]}
-			startChecker(p.table, words[1], info)
+			var d health.Def
+			if words[4] == "" {
+				d.Type = "none"
+			} else {
+				d.Type = "http"
+			}
+			d.Delay = healthDelay
+			d.Timeout = healthTimeout
+			d.HTTPAddr = words[4]
+			d.HTTPTimeout = httpTimeout
+			info := &backendInfo{
+				ip:     addr,
+				health: d,
+			}
+			initHealth(p.table, words[2], info)
 			p.info[words[2]] = info
 		case "lookup":
 			l := lookupPackets(tt, testPackets)
@@ -221,10 +259,13 @@ func main() {
 				fmt.Printf("VIP %v:\n", paddr)
 				for backend, info := range p.info {
 					fmt.Printf("backend %v: IP %v", backend, info.ip)
-					if info.healthService == "" {
+					switch info.health.Type {
+					case "none":
 						fmt.Print(" (health mocked)")
-					} else {
-						fmt.Printf("; healthcheck %v", info.healthService)
+					case "http":
+						fmt.Printf("; healthcheck %v", info.health.HTTPAddr)
+					default:
+						panic("unknown health type")
 					}
 					fmt.Println()
 				}
