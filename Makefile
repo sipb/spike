@@ -1,4 +1,4 @@
-.PHONY: all clean test
+.PHONY: all clean test lookup_dry
 
 LIBFILES := $(shell find common config health maglev tracking -name '*.go')
 
@@ -10,7 +10,10 @@ test:
 bin/demo: $(shell find demo -name '*.go') $(LIBFILES)
 	go build -o $@ github.com/sipb/spike/demo/main
 
-l%okup.so l%okup.h: $(shell find lookup -name '*.go') $(LIBFILES)
+lookup_dry:  $(shell find lookup -name '*.go') $(LIBFILES)
+	go build -o /dev/null github.com/sipb/spike/lookup/main
+
+l%okup.so l%okup.h: $(shell find lookup -name '*.go') $(LIBFILES) lookup_dry
 	go build -o lookup.so -buildmode=c-shared github.com/sipb/spike/lookup/main
 
 lookup_processed.h: lookup.h
