@@ -6,8 +6,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/signal"
-	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -18,8 +16,6 @@ import (
 	"github.com/sipb/spike/maglev"
 	"github.com/sipb/spike/tracking"
 )
-
-const debugGoroutines bool = false
 
 const (
 	healthDelay    time.Duration = 2 * time.Second
@@ -62,17 +58,6 @@ func initHealth(mm *maglev.Table, name string, info *backendInfo) {
 }
 
 func main() {
-	if debugGoroutines {
-		// dump goroutine info on interrupt
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		go func() {
-			<-c
-			pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
-			os.Exit(130)
-		}()
-	}
-
 	type pool struct {
 		info  map[string]*backendInfo
 		table *maglev.Table
