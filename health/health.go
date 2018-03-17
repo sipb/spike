@@ -9,10 +9,10 @@ import (
 )
 
 type Def struct {
-	// valid types are "none", "http"
+	// valid types are "mock", "http"
 	Type string
 
-	// ignored for type "none"
+	// ignored for type "mock"
 	Delay   time.Duration
 	Timeout time.Duration
 
@@ -21,48 +21,53 @@ type Def struct {
 	HTTPTimeout time.Duration
 }
 
-func MakeChecker(d Def) Checker {
+func MakeChecker(d Def, healthy bool) Checker {
 	switch d.Type {
-	case "none":
-		return Null(make(chan bool))
+	case "mock":
+		return &Mock{make(chan bool), healthy}
 	case "http":
 		return makeFunChecker(
 			checkHTTP(d.HTTPAddr, d.HTTPTimeout),
 			d.Delay,
 			d.Timeout,
+			healthy,
 		)
 	}
-	panic(fmt.Sprintf("bad type %v in health definition", d.Type))
+	panic(fmt.Sprintf("bad type %#v in health definition", d.Type))
 }
 
 type Checker interface {
 	// Check runs asynchronous health checking.  The updates channel
 	// receives updates on the health state.
 	Start()
-	Stop()
+	Stop() bool // returns whether it was finally healthy
 	Updates() <-chan bool
-	Healthy() bool
 }
 
-type Null chan bool
-
-var _ Checker = Null(nil)
-
-func (n Null) Start() {
-	n <- true
+type Mock struct {
+	c chan bool
+	healthy bool
 }
 
-func (n Null) Stop() {
-	n <- false
-	close(n)
+var _ Checker = &Mock{}
+
+func (m *Mock) Start() {}
+
+func (m *Mock) SetHealthy(h bool) {
+	if m.healthy == h {
+		return
+	}
+	m.healthy = h
+	m.c <- h
 }
 
-func (n Null) Updates() <-chan bool {
-	return n
+func (m *Mock) Stop() bool {
+	close(m.c)
+	return m.healthy
 }
 
-func (n Null) Healthy() bool {
-	return true
+func (m *Mock) Updates() <-chan bool {
+	return m.c
 }
 
 type funChecker struct {
@@ -81,12 +86,13 @@ func makeFunChecker(
 	check func() bool,
 	delay time.Duration,
 	timeout time.Duration,
+	healthy bool,
 ) *funChecker {
 	return &funChecker{
 		check:   check,
 		delay:   delay,
 		timeout: timeout,
-		healthy: false,
+		healthy: healthy,
 		updates: make(chan bool),
 		quit:    make(chan struct{}),
 	}
@@ -94,9 +100,6 @@ func makeFunChecker(
 
 func (f *funChecker) Start() {
 	defer func() {
-		if f.healthy {
-			f.updates <- false
-		}
 		close(f.updates)
 	}()
 
@@ -128,16 +131,14 @@ func (f *funChecker) Start() {
 	}
 }
 
-func (f *funChecker) Stop() {
+func (f *funChecker) Stop() bool {
+	f.quit <- struct{}{}
 	close(f.quit)
+	return f.healthy
 }
 
 func (f *funChecker) Updates() <-chan bool {
 	return f.updates
-}
-
-func (f *funChecker) Healthy() bool {
-	return f.healthy
 }
 
 // Callback is a wrapper around Checker which makes callbacks to consume

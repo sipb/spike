@@ -6,8 +6,8 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipb/spike/common"
@@ -31,82 +31,70 @@ type backendInfo struct {
 	checker health.Checker
 }
 
-// requires that info.ip and info.health are filled in already
-func initHealth(mm *maglev.Table, name string, info *backendInfo) {
-	backends := make(chan *common.Backend, 1)
+type pool struct {
+	backends map[string]*backendInfo
+	table    *maglev.Table
+}
 
-	info.checker = health.MakeChecker(info.health)
+type Spike struct {
+	poolsLock sync.RWMutex
+	pools     map[[16]byte]pool
+	tracker   *tracking.Cache
+}
+
+// requires that info.ip and info.health are filled in already
+func initHealth(mm *maglev.Table, name string, info *backendInfo,
+	healthy bool) {
+	backends := make(chan *common.Backend, 1)
+	onUp := func() {
+		log.Printf("backend %v is healthy\n", name)
+		down := make(chan struct{})
+		backend := &common.Backend{
+			IP:        info.ip,
+			Unhealthy: down,
+		}
+		backends <- backend
+		mm.Add(backend)
+	}
+	onDown := func() {
+		log.Printf("backend %v is down\n", name)
+		backend := <-backends
+		close(backend.Unhealthy)
+		mm.Remove(backend)
+	}
+
+	if healthy {
+		onUp()
+	}
+
+	info.checker = health.MakeChecker(info.health, healthy)
 	go info.checker.Start()
-	go health.Callback(info.checker,
-		func() {
-			log.Printf("backend %v is healthy\n", name)
-			down := make(chan struct{})
-			backend := &common.Backend{
-				IP:        info.ip,
-				Unhealthy: down,
+	go health.Callback(info.checker, onUp, onDown)
+}
+
+func NewSpike() *Spike {
+	s := new(Spike)
+	s.tracker = tracking.New(
+		func(f common.FiveTuple) (*common.Backend, bool) {
+			s.poolsLock.RLock()
+			pool, ok := s.pools[f.Dst_ip]
+			s.poolsLock.RUnlock()
+			if !ok {
+				return nil, false
 			}
-			backends <- backend
-			mm.Add(backend)
-		},
-		func() {
-			log.Printf("backend %v is down\n", name)
-			backend := <-backends
-			close(backend.Unhealthy)
-			mm.Remove(backend)
-		},
-	)
+			return pool.table.Lookup5(f)
+		}, trackingExpiry)
+	return s
 }
 
 func main() {
-	type pool struct {
-		info  map[string]*backendInfo
-		table *maglev.Table
-	}
-
-	config, err := config.Read("config.yaml")
+	c, err := config.Read("config.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}
-	pools := make(map[[16]byte]pool)
-	for _, p := range config.Pools {
-		var vip [16]byte
-		for i, x := range net.ParseIP(p.VIP).To16() {
-			vip[i] = x
-		}
-		backends := make(map[string]*backendInfo)
-		for _, b := range p.Backends {
-			backends[b.Name] = &backendInfo{
-				ip: net.ParseIP(b.IP),
-				health: health.Def{
-					Type: b.HealthCheck.Type,
 
-					Delay:   healthDelay,
-					Timeout: healthTimeout,
-
-					HTTPAddr:    b.HealthCheck.HTTPAddr,
-					HTTPTimeout: httpTimeout,
-				},
-			}
-		}
-		pools[vip] = pool{
-			backends,
-			maglev.New(p.MaglevSize),
-		}
-	}
-
-	tt := tracking.New(func(f common.FiveTuple) (*common.Backend, bool) {
-		z, ok := pools[f.Dst_ip]
-		if !ok {
-			return nil, false
-		}
-		return z.table.Lookup5(f)
-	}, trackingExpiry)
-
-	for _, pool := range pools {
-		for name, info := range pool.info {
-			initHealth(pool.table, name, info)
-		}
-	}
+	s := NewSpike()
+	s.Reconfig(c)
 
 	testPackets := make([]common.FiveTuple, 0, 10)
 	for i := byte(0); i < 10; i++ {
@@ -136,126 +124,26 @@ func main() {
 		case "help":
 			fmt.Println("commands:")
 			fmt.Println("help")
-			fmt.Println("addpool pool size")
-			fmt.Println("addbackend pool name IP [healthService]")
-			fmt.Println("rmbackend pool name")
-			fmt.Println("list")
 			fmt.Println("lookup")
+			fmt.Println("reconfig")
 			fmt.Println("quit")
-		case "rmbackend":
-			if len(words) != 3 {
-				fmt.Println("?")
-				continue
-			}
-			paddr := net.ParseIP(words[1]).To16()
-			if paddr == nil {
-				fmt.Println("invalid pool address")
-				continue
-			}
-			p, ok := pools[common.AddrTo16(paddr)]
-			if !ok {
-				fmt.Println("no such pool")
-				continue
-			}
-			info, ok := p.info[words[2]]
-			if !ok {
-				fmt.Println("no such backend")
-				continue
-			}
-			info.checker.Stop()
-			delete(p.info, words[2])
-		case "addpool":
-			if len(words) != 3 {
-				fmt.Println("?")
-				continue
-			}
-			paddr := net.ParseIP(words[1]).To16()
-			if paddr == nil {
-				fmt.Println("invalid pool address")
-				continue
-			}
-			paddr_a := common.AddrTo16(paddr)
-			size, err := strconv.Atoi(words[2])
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			p := pool{
-				make(map[string]*backendInfo),
-				maglev.New(uint64(size)),
-			}
-			if _, ok := pools[paddr_a]; ok {
-				fmt.Println("pool exists")
-				continue
-			}
-			pools[paddr_a] = p
-		case "addbackend":
-			if len(words) == 4 {
-				words = append(words, "")
-			}
-			if len(words) != 5 {
-				fmt.Println("?")
-				continue
-			}
-			paddr := net.ParseIP(words[1]).To16()
-			if paddr == nil {
-				fmt.Println("invalid pool address")
-				continue
-			}
-			paddr_a := common.AddrTo16(paddr)
-			p, ok := pools[paddr_a]
-			if !ok {
-				fmt.Println("no such pool")
-				continue
-			}
-			if _, ok := p.info[words[2]]; ok {
-				fmt.Println("backend already exists")
-				continue
-			}
-			addr := net.ParseIP(words[3])
-			if addr == nil {
-				fmt.Println("invalid backend address")
-				continue
-			}
-			var d health.Def
-			if words[4] == "" {
-				d.Type = "none"
-			} else {
-				d.Type = "http"
-			}
-			d.Delay = healthDelay
-			d.Timeout = healthTimeout
-			d.HTTPAddr = words[4]
-			d.HTTPTimeout = httpTimeout
-			info := &backendInfo{
-				ip:     addr,
-				health: d,
-			}
-			initHealth(p.table, words[2], info)
-			p.info[words[2]] = info
 		case "lookup":
-			l := lookupPackets(tt, testPackets)
+			l := lookupPackets(s, testPackets)
 			fmt.Printf("5-tuple to Server mapping:\n")
 			for _, p := range testPackets {
 				fmt.Printf("%v: %v\n", p, l[p])
 			}
-		case "list":
-			for paddr, p := range pools {
-				fmt.Printf("VIP %v:\n", paddr)
-				for backend, info := range p.info {
-					fmt.Printf("backend %v: IP %v", backend, info.ip)
-					switch info.health.Type {
-					case "none":
-						fmt.Print(" (health mocked)")
-					case "http":
-						fmt.Printf("; healthcheck %v", info.health.HTTPAddr)
-					default:
-						panic("unknown health type")
-					}
-					fmt.Println()
-				}
-				fmt.Println()
+		case "reconfig":
+			if len(words) != 2 {
+				fmt.Println("usage: reconfig <filename>")
+				continue
 			}
+			c, err := config.Read(words[1])
+			if err != nil {
+				fmt.Printf("error reading config: %v", err)
+			}
+			s.Reconfig(c)
+			fmt.Println("ok")
 		case "quit":
 			return
 		default:
@@ -264,17 +152,73 @@ func main() {
 	}
 }
 
+func (s *Spike) Reconfig(config *config.T) {
+	s.poolsLock.Lock()
+	defer s.poolsLock.Unlock()
+
+	newPools := make(map[[16]byte]pool)
+	for _, p := range config.Pools {
+		vip := common.AddrTo16(net.ParseIP(p.VIP))
+		backends := make(map[string]*backendInfo)
+		oldPool := s.pools[vip]
+		table := maglev.New(p.MaglevSize)
+		for _, b := range p.Backends {
+			info := backendInfo{
+				ip: net.ParseIP(b.IP),
+				health: health.Def{
+					Type:        b.HealthCheck.Type,
+					Delay:       healthDelay,
+					Timeout:     healthTimeout,
+					HTTPAddr:    b.HealthCheck.HTTPAddr,
+					HTTPTimeout: httpTimeout,
+				},
+			}
+
+			backends[b.Name] = &info
+
+			oldBackend, ok := oldPool.backends[b.Name]
+			healthy := b.HealthCheck.Healthy
+			if ok && oldBackend.health == info.health {
+				healthy = oldBackend.checker.Stop()
+				// prevent it from being stopped again later
+				delete(oldPool.backends, b.Name)
+			}
+			initHealth(table, b.Name, &info, healthy)
+		}
+		newPools[vip] = pool{
+			backends: backends,
+			table:    table,
+		}
+	}
+
+	oldPools := s.pools
+	s.pools = newPools
+
+	go func() {
+		// stop checkers not in use
+		for _, pool := range oldPools {
+			for _, b := range pool.backends {
+				b.checker.Stop()
+			}
+		}
+	}()
+}
+
 func lookupPackets(
-	tt *tracking.Cache,
+	s *Spike,
 	packets []common.FiveTuple,
 ) map[common.FiveTuple][]byte {
 	ret := make(map[common.FiveTuple][]byte)
 	for _, p := range packets {
-		if serv, ok := tt.Lookup(p); ok {
+		if serv, ok := s.Lookup(p); ok {
 			ret[p] = serv.IP
 		} else {
 			ret[p] = nil
 		}
 	}
 	return ret
+}
+
+func (s *Spike) Lookup(f common.FiveTuple) (*common.Backend, bool) {
+	return s.tracker.Lookup(f)
 }
