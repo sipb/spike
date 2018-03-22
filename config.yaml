@@ -1,0 +1,42 @@
+src mac: 11:11:11:11:11:11
+dst mac: 22:22:22:22:22:22
+src ip: 1.3.5.7
+
+input:
+  type: pcap
+  pcap file: test_in.pcap
+output:
+  type: pcap
+  pcap file: test_out.pcap
+
+pools:
+- vip: 18.18.18.18
+  maglev size: 11
+  backends:
+  - name: cheesy-fries
+    ip: 1.2.3.4
+    healthcheck:
+      type: http
+      http address: http://cheesy-fries.mit.edu/health
+  - name: strawberry-habanero
+    ip: 5.6.7.8
+    healthcheck:
+      type: http
+      http address: http://strawberry-habanero.mit.edu/health
+  - name: powerful-motor
+    ip: 9.10.11.12
+    healthcheck:
+      type: mock
+- vip: 18.18.18.19
+  maglev size: 11
+  backends:
+  - name: godel
+    ip: 1.0.0.1
+    healthcheck:
+      type: mock
+      healthy: true
+  - name: lob
+    ip: 1.1.0.0
+    healthcheck:
+      type: mock
+      healthy: true

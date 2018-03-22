@@ -1,6 +1,6 @@
 .PHONY: all clean test lookup_dry
 
-LIBFILES := $(shell find common config health maglev tracking -name '*.go')
+LIBFILES := $(shell find common config health maglev tracking lookup -name '*.go')
 
 all: bin/demo lookup.so lookup_processed.h
 
