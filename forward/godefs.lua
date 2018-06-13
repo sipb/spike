@@ -24,22 +24,13 @@ function M.Init()
    return golib.Init()
 end
 
-function M.AddBackend(service, ip, ip_len, health_check_type)
-   return golib.AddBackend(GoString(service, #service),
-                           GoSlice(ip, ip_len, ip_len),
-                           health_check_type)
-end
-
-function M.AddBackendsFromConfig(config_file)
-   return golib.AddBackendsFromConfigVoid(GoString(config_file, #config_file))
-end
-
-function M.AddBackendsAndGetSpikeConfig(config_file)
-   return golib.AddBackendsAndGetSpikeConfig(GoString(config_file, #config_file))
-end
-
-function M.RemoveBackend(service)
-   return golib.RemoveBackend(GoString(service, #service))
+function M.LoadConfig(config_file)
+   local cfg = golib.LoadConfig(GoString(config_file, #config_file))
+   return {
+      src_mac = cfg.r0,
+      dst_mac = cfg.r1,
+      src_ip  = cfg.r2,
+   }
 end
 
 local ip_addr_array = ffi.typeof("unsigned char[16]")
